@@ -102,6 +102,17 @@ async function readContract(arweave, contractId, height, returnValidity) {
 
   let { handler, swGlobal } = contractInfo;
 
+  // Internal smartweave overwrite
+  swGlobal.contracts.readContractState = (_contractId, _height, _returnValidity) =>
+    readContract(
+      arweave,
+      _contractId,
+      _height || (swGlobal._isDryRunning ? Number.POSITIVE_INFINITY : swGlobal.block.height),
+      _returnValidity,
+    );
+
+
+
   const validity = {};
 
   for (const txInfo of txInfos) {
