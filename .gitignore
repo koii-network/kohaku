@@ -1,0 +1,9 @@
+.env
+my-db.db
+node_modules
+yarn-error.log
+.vscode
+package-lock.json
+data/*
+values.node*.dec.yaml
+build/testnet_deploy/koi-node
