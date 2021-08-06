@@ -2,9 +2,9 @@ const swicw = require("..");
 const Arweave = require("arweave");
 const smartweave = require("smartweave");
 
-// 9BX6HQV5qkGiXV6hTglAuPdccKoEP_XI2NNbjHv5MMM for main contract
-// IpEKWpnCCa09-fALeXsQmVD_UYHCuyblVpgPOrsMXEM for old task contract
-const CONTRACT_ID = "0Z4z_Z6tLza640a9aB6Y4wsUHO80i2JAgOa5rZZ7TsA";
+// 9BX6HQV5qkGiXV6hTglAuPdccKoEP_XI2NNbjHv5MMM main contract
+// 0Z4z_Z6tLza640a9aB6Y4wsUHO80i2JAgOa5rZZ7TsA new task contract
+const CONTRACT_ID = "IpEKWpnCCa09-fALeXsQmVD_UYHCuyblVpgPOrsMXEM"; // old task contract
 
 async function main() {
   const arweave = Arweave.init({
