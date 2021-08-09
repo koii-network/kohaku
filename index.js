@@ -117,7 +117,7 @@ async function internalReadContract(
   returnValidity
 ) {
   // If height undefined, default to current network height
-  height = height || (await arweave.network.getInfo());
+  height = height || (await arweave.network.getInfo()).height;
 
   // Load contract
   const resBase = await baseReadContract(
