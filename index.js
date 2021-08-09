@@ -81,6 +81,7 @@ async function readContract(arweave, contractId, height, returnValidity) {
     );
     validity[currentTx.id] = result.type === "ok";
     cache.contracts[txContractId].state = result.state;
+    cache.height = currentTx.block ? currentTx.block.height : height;
   }
 
   // Update state cache and return state

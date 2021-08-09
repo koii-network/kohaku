@@ -17,12 +17,9 @@ async function main() {
 
   // console.log("Reading recursive contract with smartweave");
   // const t1 = new Date();
-  // const res1 = await smartweave.readContract(
-  //   arweave,
-  //   CONTRACT_ID
-  // );
+  // const res1 = await smartweave.readContract(arweave, CONTRACT_ID);
   const t2 = new Date();
-  //console.log(`Done in ${t2 - t1}\n\nReading recursive contract with swicw`);
+  // console.log(`Done in ${t2 - t1}\n\nReading recursive contract with swicw`);
 
   const res2 = await swicw.readContract(arweave, CONTRACT_ID);
   const t3 = new Date();
@@ -36,7 +33,10 @@ async function main() {
   const t4 = new Date();
   console.log(`Done in ${t4 - t3}`);
 
-  //console.log("\nswicw matches SmartWeave?", JSON.stringify(res1) === JSON.stringify(res2));
+  console.log(
+    "\nswicw matches SmartWeave?",
+    JSON.stringify(res1) === JSON.stringify(res2)
+  );
 }
 
 main().then(() => console.log("Terminated"));
