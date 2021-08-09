@@ -6,6 +6,9 @@
   "dependencies": {
     "smartweave": "0.4.31"
   },
+  "scripts" : {
+    "test" : "node test"
+  },
   "devDependencies": {
     "arweave": "^1.10.16",
     "eslint": "^7.27.0",
