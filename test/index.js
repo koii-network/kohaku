@@ -33,10 +33,10 @@ async function main() {
   const t4 = new Date();
   console.log(`Done in ${t4 - t3}`);
 
-  console.log(
-    "\nswicw matches SmartWeave?",
-    JSON.stringify(res1) === JSON.stringify(res2)
-  );
+  // console.log(
+  //   "\nswicw matches SmartWeave?",
+  //   JSON.stringify(res1) === JSON.stringify(res2)
+  // );
 }
 
 main().then(() => console.log("Terminated"));
