@@ -14,6 +14,8 @@ const cache = {
 };
 
 /**
+ * Reads contract and returns state if height matches, otherwise, executes
+ *  new transactions across all contracts up to block height then return state
  * @param {Arweave} arweave Arweave client instance
  * @param {string} contractId Transaction Id of the contract
  * @param {number} height if specified the contract will be replayed only to this block height
@@ -90,10 +92,10 @@ async function readContract(arweave, contractId, height, returnValidity) {
 
 /**
  * Reads contract info and stores it in the cache, returns state if block height matches
- * @param arweave         an Arweave client instance
- * @param contractId      the Transaction Id of the contract
- * @param height          if specified the contract will be replayed only to this block height
- * @param returnValidity  if true, the function will return valid and invalid transaction IDs along with the state
+ * @param {Arweave} arweave Arweave client instance
+ * @param {string} contractId Transaction Id of the contract
+ * @param {number} height if specified the contract will be replayed only to this block height
+ * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
  */
 async function baseReadContract(arweave, contractId, height, returnValidity) {
   // If not contract in local cache, load and cache it
