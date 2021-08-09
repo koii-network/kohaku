@@ -14,14 +14,10 @@ const cache = {
 };
 
 /**
- * Queries all interaction transactions and replays a contract to its latest state.
- *
- * If height is provided, will replay only to that block height.
- *
- * @param arweave         an Arweave client instance
- * @param contractId      the Transaction Id of the contract
- * @param height          if specified the contract will be replayed only to this block height
- * @param returnValidity  if true, the function will return valid and invalid transaction IDs along with the state
+ * @param {Arweave} arweave Arweave client instance
+ * @param {string} contractId Transaction Id of the contract
+ * @param {number} height if specified the contract will be replayed only to this block height
+ * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
  */
 async function readContract(arweave, contractId, height, returnValidity) {
   // If height undefined, default to current network height
@@ -92,6 +88,13 @@ async function readContract(arweave, contractId, height, returnValidity) {
   // TODO FIXME Contract evolution is not supported
 }
 
+/**
+ * Reads contract info and stores it in the cache, returns state if block height matches
+ * @param arweave         an Arweave client instance
+ * @param contractId      the Transaction Id of the contract
+ * @param height          if specified the contract will be replayed only to this block height
+ * @param returnValidity  if true, the function will return valid and invalid transaction IDs along with the state
+ */
 async function baseReadContract(arweave, contractId, height, returnValidity) {
   // If not contract in local cache, load and cache it
   if (!cache.contracts[contractId]) {
@@ -110,6 +113,13 @@ async function baseReadContract(arweave, contractId, height, returnValidity) {
   if (height === cache.height) return cloneReturn(contractId, returnValidity);
 }
 
+/**
+ * Used for reading a contract within a contract, does not do any execution
+ * @param {Arweave} arweave Arweave client instance
+ * @param {string} contractId Transaction Id of the contract
+ * @param {number} height if specified the contract will be replayed only to this block height
+ * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
+ */
 async function internalReadContract(
   arweave,
   contractId,
@@ -135,6 +145,12 @@ async function internalReadContract(
   await sortTransactions(arweave, cache.txQueue);
 }
 
+/**
+ * Used to clone output variables so state cached isn't mutated
+ * @param {string} contractId Contract ID whose state to clone
+ * @param {boolean} returnValidity Wether to include the validity array
+ * @returns {{any, any} | any} State or object that includes the state and validity array
+ */
 function cloneReturn(contractId, returnValidity) {
   const cacheContract = cache.contracts[contractId];
   const state = JSON.parse(JSON.stringify(cacheContract.state));
@@ -146,7 +162,14 @@ function cloneReturn(contractId, returnValidity) {
   return state;
 }
 
-// Grab all transactions from a specific height
+/**
+ * Grab all transactions from a specific height
+ * @param {Arweave} arweave Arweave client instance
+ * @param {string[]} contractIds Array of contract IDs to fetch
+ * @param {number} min Lowest block to fetch from
+ * @param {number} max Highest block to fetch from
+ * @returns {any[]} Transaction objects
+ */
 async function fetchTransactions(arweave, contractIds, min, max) {
   let variables = {
     tags: [
@@ -235,6 +258,7 @@ async function getNextPage(arweave, variables) {
   return txs;
 }
 
+// Create a proxy wrapper over the smartweave object for exporting
 const smartweaveProxy = {
   readContract
 };
