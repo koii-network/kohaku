@@ -56,15 +56,18 @@ async function readContract(arweave, contractId, height, returnValidity) {
   while (cache.txQueue.length) {
     // Get transaction and corresponding contract
     const txInfo = cache.txQueue.shift();
-    const txContractId = txInfo.node.tags.find(
-      (tag) => tag.name === "Contract"
-    ).value;
+    const contractIndex = txInfo.node.tags.findIndex(
+      (tag) => tag.name === "Contract" && tag.value in cache.contracts
+    );
+    const txContractId = txInfo.node.tags[contractIndex].value;
     const contractInfo = cache.contracts[txContractId].info;
+    const inputTag = txInfo.node.tags[contractIndex + 1];
 
     // Get transaction input
-    let input = txInfo.node.tags.find((tag) => tag.name === "Input").value;
+    if (!inputTag || inputTag.name !== "Input") continue;
+    let input;
     try {
-      input = JSON.parse(input);
+      input = JSON.parse(inputTag.value);
     } catch (e) {
       continue;
     }
