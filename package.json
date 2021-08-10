@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
-  "dependencies": {
-    "smartweave": "0.4.31"
-  },
   "scripts" : {
     "test" : "node test"
+  },
+  "dependencies": {
+    "smartweave": "0.4.31"
   },
   "devDependencies": {
     "arweave": "^1.10.16",
