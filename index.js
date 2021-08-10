@@ -26,12 +26,7 @@ async function readContract(arweave, contractId, height, returnValidity) {
   height = height || (await arweave.network.getInfo()).height;
 
   // Load contract
-  const resBase = await baseReadContract(
-    arweave,
-    contractId,
-    height,
-    returnValidity
-  );
+  const resBase = await baseReadContract(contractId, height, returnValidity);
   if (resBase) return resBase;
 
   // Fetch and sort transactions for all contracts since cache height up to height
@@ -89,63 +84,54 @@ async function readContract(arweave, contractId, height, returnValidity) {
   return cloneReturn(contractId, returnValidity);
 
   // TODO FIXME Contract evolution is not supported
-}
 
-/**
- * Reads contract info and stores it in the cache, returns state if block height matches
- * @param {Arweave} arweave Arweave client instance
- * @param {string} contractId Transaction Id of the contract
- * @param {number} height if specified the contract will be replayed only to this block height
- * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
- */
-async function baseReadContract(arweave, contractId, height, returnValidity) {
-  // If not contract in local cache, load and cache it
-  if (!cache.contracts[contractId]) {
-    const contractInfo = await loadContract(arweave, contractId);
-    contractInfo.swGlobal.contracts.readContractState = internalReadContract;
-    cache.contracts[contractId] = {
-      info: contractInfo,
-      state: JSON.parse(contractInfo.initState),
-      validity: {}
-    };
+  // Internal functions
+  /**
+   * Used for reading a contract within a contract, does not do any execution
+   * @param {string} contractId Transaction Id of the contract
+   */
+  async function internalReadContract(_contractId, _height, _returnValidity) {
+    _height = _height || height;
+
+    // Load contract
+    const resBase = await baseReadContract(
+      _contractId,
+      _height,
+      _returnValidity
+    );
+    if (resBase) return resBase;
+
+    // Fetch and sort transactions for this contract since cache height up to height
+    cache.txQueue = cache.txQueue.concat(
+      await fetchTransactions(arweave, [_contractId], cache.height + 1, _height)
+    );
+    await sortTransactions(arweave, cache.txQueue);
   }
 
-  // Handle height <= cache height
-  if (height < cache.height)
-    throw new Error("SWICW read heights must be non-decreasing");
-  if (height === cache.height) return cloneReturn(contractId, returnValidity);
-}
+  /**
+   * Reads contract info and stores it in the cache, returns state if block height matches
+   * @param {string} contractId Transaction Id of the contract
+   * @param {number} height if specified the contract will be replayed only to this block height
+   * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
+   */
+  async function baseReadContract(_contractId, _height, _returnValidity) {
+    // If not contract in local cache, load and cache it
+    if (!cache.contracts[_contractId]) {
+      const contractInfo = await loadContract(arweave, _contractId);
+      contractInfo.swGlobal.contracts.readContractState = internalReadContract;
+      cache.contracts[_contractId] = {
+        info: contractInfo,
+        state: JSON.parse(contractInfo.initState),
+        validity: {}
+      };
+    }
 
-/**
- * Used for reading a contract within a contract, does not do any execution
- * @param {Arweave} arweave Arweave client instance
- * @param {string} contractId Transaction Id of the contract
- * @param {number} height if specified the contract will be replayed only to this block height
- * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
- */
-async function internalReadContract(
-  arweave,
-  contractId,
-  height,
-  returnValidity
-) {
-  // If height undefined, default to current network height
-  height = height || (await arweave.network.getInfo()).height;
-
-  // Load contract
-  const resBase = await baseReadContract(
-    arweave,
-    contractId,
-    height,
-    returnValidity
-  );
-  if (resBase) return resBase;
-
-  // Fetch and sort transactions for this contract since cache height up to height
-  cache.txQueue = cache.txQueue.concat(
-    await fetchTransactions(arweave, [contractId], cache.height + 1, height)
-  );
-  await sortTransactions(arweave, cache.txQueue);
+    // Handle height <= cache height
+    if (_height < cache.height)
+      throw new Error("SWICW read heights must be non-decreasing");
+    if (_height === cache.height)
+      return cloneReturn(_contractId, _returnValidity);
+  }
 }
 
 /**
