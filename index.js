@@ -1,239 +1,195 @@
-// TODO, filter out blocks
-
 const smartweave = require("smartweave");
 const { execute } = require("smartweave/lib/contract-step");
 const { loadContract } = require("smartweave/lib/contract-load");
 const { arrayToHex } = require("smartweave/lib/utils");
-const SmartWeaveError = require("smartweave/lib/errors");
-const { SmartWeaveErrorType } = require("smartweave/lib/errors");
-
-/*
-Contract object
-{
-  info: any,
-  init_state: any,
-  txs: any[]
-}
-*/
 
 // the maximum number of transactions we can get from graphql at once
 const MAX_REQUEST = 100;
 
 // Cache singleton
 const cache = {
-  contracts: []
+  contracts: {},
+  height: 0,
+  txQueue: []
 };
 
 /**
- * Queries all interaction transactions and replays a contract to its latest state.
- *
- * If height is provided, will replay only to that block height.
- *
- * @param arweave         an Arweave client instance
- * @param contractId      the Transaction Id of the contract
- * @param height          if specified the contract will be replayed only to this block height
- * @param returnValidity  if true, the function will return valid and invalid transaction IDs along with the state
+ * Reads contract and returns state if height matches, otherwise, executes
+ *  new transactions across all contracts up to block height then return state
+ * @param {Arweave} arweave Arweave client instance
+ * @param {string} contractId Transaction Id of the contract
+ * @param {number} height if specified the contract will be replayed only to this block height
+ * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
  */
 async function readContract(arweave, contractId, height, returnValidity) {
-  if (!height) {
-    const networkInfo = await arweave.network.getInfo();
-    height = networkInfo.height;
-  }
+  // If height undefined, default to current network height
+  height = height || (await arweave.network.getInfo()).height;
 
-  // If not contract in local cache, load and cache it
-  let loadPromise;
+  // If not contract in local cache
   if (!cache.contracts[contractId]) {
-    loadPromise = loadContract(arweave, contractId).catch(() => {
-      const error = new SmartWeaveError(
-        SmartWeaveErrorType.CONTRACT_NOT_FOUND,
-        {
-          message: `Contract having txId: ${contractId} not found`,
-          requestedTxId: contractId
-        }
-      );
-      throw error;
-    });
+    // Load and cache it
+    const contractInfo = await loadContract(arweave, contractId);
+    contractInfo.swGlobal.contracts.readContractState = internalReadContract;
     cache.contracts[contractId] = {
-      txs: []
+      info: contractInfo,
+      state: JSON.parse(contractInfo.initState),
+      validity: {}
     };
   }
 
-  const contractCache = cache.contracts[contractId];
+  if (height < cache.height)
+    throw new Error("SWICW read heights must be non-decreasing");
+  if (height === cache.height) return cloneReturn(contractId, returnValidity);
 
-  let fetchTxPromise;
-  // If empty
-  if (contractCache.txs.length === 0) {
-    fetchTxPromise = fetchTransactions(arweave, contractId, 0);
-  } else if (
-    // Or last block is less than height
-    getMaxHeight(contractCache.txs) < height
-  ) {
-    const min =
-      contractCache.txs[contractCache.txs.length - 1].node.block.height + 1;
-    fetchTxPromise = fetchTransactions(arweave, contractId, min);
-  }
-
-  let [contractInfo, newTxs] = await Promise.all([loadPromise, fetchTxPromise]);
-
-  if (contractInfo instanceof Error) throw contractInfo;
-  if (newTxs instanceof Error) throw newTxs;
-
-  if (contractInfo !== undefined) contractCache.info = contractInfo;
-  else contractInfo = contractCache.info;
-
-  if (newTxs !== undefined) contractCache.txs.push(...newTxs);
-  // TODO filter is slow, use binary search to find block.height > height, then slice(0, i)
-  const txInfos = contractCache.txs.filter(
-    (tx) => tx.node.block && tx.node.block.height <= height
-  );
-
-  let state;
-  const contractSrcTXID = contractInfo.contractSrcTXID;
-  try {
-    state = JSON.parse(contractInfo.initState);
-  } catch (e) {
-    throw new Error(
-      `Unable to parse initial state for contract: ${contractId}`
-    );
-  }
-
-  // TODO, sort before pushing to tx array, that way we only have to sort the new txs instead of all of them
-  await sortTransactions(arweave, txInfos);
-
-  let { handler, swGlobal } = contractInfo;
-
-  // Internal smartweave overwrite
-  swGlobal.contracts.readContractState = (_contractId, _height, _returnValidity) =>
-    readContract(
+  // Fetch and sort transactions for all contracts since cache height up to height
+  cache.txQueue = cache.txQueue.concat(
+    await fetchTransactions(
       arweave,
-      _contractId,
-      _height || (swGlobal._isDryRunning ? Number.POSITIVE_INFINITY : swGlobal.block.height),
-      _returnValidity,
-    );
+      Object.keys(cache.contracts),
+      cache.height + 1,
+      height
+    )
+  );
+  await sortTransactions(arweave, cache.txQueue);
 
+  // Execute every transaction in queue until empty
+  while (cache.txQueue.length) {
+    // Get transaction and corresponding contract
+    const txInfo = cache.txQueue.shift();
+    const txContractId = txInfo.node.tags.find(
+      (tag) => tag.name === "Contract"
+    ).value;
+    const contractInfo = cache.contracts[txContractId].info;
 
-
-  const validity = {};
-
-  for (const txInfo of txInfos) {
-    const currentTx = txInfo.node;
-
-    const contractIndex = txInfo.node.tags.findIndex(
-      (tag) => tag.name === "Contract" && tag.value === contractId
-    );
-    const inputTag = txInfo.node.tags[contractIndex + 1];
-
-    if (!inputTag || inputTag.name !== "Input") continue;
-
-    let input = inputTag.value;
-
+    // Get transaction input
+    let input = txInfo.node.tags.find((tag) => tag.name === "Input").value;
     try {
       input = JSON.parse(input);
     } catch (e) {
       continue;
     }
-
     if (!input) continue;
 
+    // Setup execution env
+    const currentTx = txInfo.node;
     const interaction = {
       input,
       caller: currentTx.owner.address
     };
-
+    const { handler, swGlobal } = contractInfo;
     swGlobal._activeTx = currentTx;
+    const validity = cache.contracts[txContractId].validity;
+    if (currentTx.block) cache.height = currentTx.block.height;
 
-    const result = await execute(handler, interaction, state);
+    // Execute and update contract
+    const result = await execute(
+      handler,
+      interaction,
+      cache.contracts[txContractId].state
+    );
     validity[currentTx.id] = result.type === "ok";
-
-    state = result.state;
-
-    const settings = state.settings ? new Map(state.settings) : new Map();
-
-    const evolve = state.evolve || settings.get("evolve");
-
-    let canEvolve = state.canEvolve || settings.get("canEvolve");
-
-    // By default, contracts can evolve if there's not an explicit `false`.
-    if (canEvolve === undefined || canEvolve === null) {
-      canEvolve = true;
-    }
-
-    if (evolve && /[a-z0-9_-]{43}/i.test(evolve) && canEvolve) {
-      if (contractSrcTXID !== evolve) {
-        try {
-          contractInfo = await loadContract(arweave, contractId, evolve);
-          handler = contractInfo.handler;
-        } catch (e) {
-          const error = new SmartWeaveError(
-            SmartWeaveErrorType.CONTRACT_NOT_FOUND,
-            {
-              message: `Contract having txId: ${contractId} not found`,
-              requestedTxId: contractId
-            }
-          );
-          throw error;
-        }
-      }
-    }
+    cache.contracts[txContractId].state = result.state;
   }
 
-  return returnValidity ? { state, validity } : state;
+  // Update state cache and return state
+  cache.height = height;
+  return cloneReturn(contractId, returnValidity);
+
+  // TODO FIXME Contract evolution is not supported
+
+  /**
+   * Used for reading a contract within a contract, does not do any execution
+   * @param {string} contractId Transaction Id of the contract
+   */
+  async function internalReadContract(_contractId, _height, _returnValidity) {
+    _height = _height || cache.height;
+    if (_height !== cache.height)
+      throw new Error(
+        "SWICW internal read height must match transaction height"
+      );
+
+    // If not contract in local cache
+    if (!cache.contracts[_contractId]) {
+      // Load and cache it
+      const contractInfo = await loadContract(arweave, _contractId);
+      contractInfo.swGlobal.contracts.readContractState = internalReadContract;
+      cache.contracts[_contractId] = {
+        info: contractInfo,
+        state: JSON.parse(contractInfo.initState),
+        validity: {}
+      };
+
+      // Fetch and sort transactions for this contract since cache height up to height
+      const newTxs = await fetchTransactions(
+        arweave,
+        [_contractId],
+        cache.height + 1,
+        height
+      );
+      if (newTxs.length) {
+        cache.txQueue = cache.txQueue.concat(newTxs);
+        await sortTransactions(arweave, cache.txQueue);
+      }
+    }
+
+    return cloneReturn(_contractId, _returnValidity);
+  }
 }
 
-// Grab all transactions from a specific height
-async function fetchTransactions(arweave, contractId, min) {
+/**
+ * Used to clone output variables so state cached isn't mutated
+ * @param {string} contractId Contract ID whose state to clone
+ * @param {boolean} returnValidity Wether to include the validity array
+ * @returns {{any, any} | any} State or object that includes the state and validity array
+ */
+function cloneReturn(contractId, returnValidity) {
+  const cacheContract = cache.contracts[contractId];
+  const state = JSON.parse(JSON.stringify(cacheContract.state));
+
+  if (returnValidity) {
+    const validity = JSON.parse(JSON.stringify(cacheContract.state));
+    return { state, validity };
+  }
+  return state;
+}
+
+/**
+ * Grab all transactions from a specific height
+ * @param {Arweave} arweave Arweave client instance
+ * @param {string[]} contractIds Array of contract IDs to fetch
+ * @param {number} min Lowest block to fetch from
+ * @param {number} max Highest block to fetch from
+ * @returns {any[]} Transaction objects
+ */
+async function fetchTransactions(arweave, contractIds, min, max) {
   let variables = {
     tags: [
-      {
-        name: "App-Name",
-        values: ["SmartWeaveAction"]
-      },
-      {
-        name: "Contract",
-        values: [contractId]
-      }
+      { name: "App-Name", values: ["SmartWeaveAction"] },
+      { name: "Contract", values: contractIds }
     ],
-    blockFilter: {
-      min // Inclusive, do last transaction + 1
-    },
+    blockFilter: { min, max },
     first: MAX_REQUEST
   };
 
   let transactions = await getNextPage(arweave, variables);
-
   const txInfos = transactions.edges.filter(
     (tx) => !tx.node.parent || !tx.node.parent.id
   );
 
   while (transactions.pageInfo.hasNextPage) {
     const cursor = transactions.edges[MAX_REQUEST - 1].cursor;
-
     variables = {
       ...variables,
       after: cursor
     };
-
     transactions = await getNextPage(arweave, variables);
-
     txInfos.push(
       ...transactions.edges.filter(
         (tx) => !tx.node.parent || !tx.node.parent.id
       )
     );
   }
-
   return txInfos;
-}
-
-/**
- *
- * @param {*} txs
- * @returns {number} Last block height
- */
-function getMaxHeight(txs) {
-  for (let i = txs.length - 1; i >= 0; --i)
-    if (txs[i].node.block) return txs[i].node.block.height;
-  return 0;
 }
 
 // Exact copy of smartweave implementation
@@ -293,6 +249,7 @@ async function getNextPage(arweave, variables) {
   return txs;
 }
 
+// Create a proxy wrapper over the smartweave object for exporting
 const smartweaveProxy = {
   readContract
 };
