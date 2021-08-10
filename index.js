@@ -105,7 +105,7 @@ async function readContract(arweave, contractId, height, returnValidity) {
     _height = _height || cache.height;
     if (_height !== cache.height)
       throw new Error(
-        "Internal SWICW read heights must be at transaction height"
+        "SWICW internal read height must match transaction height"
       );
 
     // If not contract in local cache

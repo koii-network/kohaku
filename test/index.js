@@ -4,7 +4,8 @@ const smartweave = require("smartweave");
 
 // 9BX6HQV5qkGiXV6hTglAuPdccKoEP_XI2NNbjHv5MMM main contract
 // 0Z4z_Z6tLza640a9aB6Y4wsUHO80i2JAgOa5rZZ7TsA new task contract
-const CONTRACT_ID = "IpEKWpnCCa09-fALeXsQmVD_UYHCuyblVpgPOrsMXEM"; // old task contract
+// IpEKWpnCCa09-fALeXsQmVD_UYHCuyblVpgPOrsMXEM old task contract
+const CONTRACT_ID = "b8y_FD82vSaE1skZtqPqtz9q6xiuZnqRcCm9mV90SuY";
 
 async function main() {
   const arweave = Arweave.init({
@@ -15,28 +16,30 @@ async function main() {
     timeout: 60000
   });
 
-  // console.log("Reading recursive contract with smartweave");
-  // const t1 = new Date();
-  // const res1 = await smartweave.readContract(arweave, CONTRACT_ID);
-  const t2 = new Date();
-  // console.log(`Done in ${t2 - t1}\n\nReading recursive contract with swicw`);
+  const height = (await arweave.network.getInfo()).height;
 
-  const res2 = await swicw.readContract(arweave, CONTRACT_ID);
+  console.log("Reading recursive contract with SmartWeave");
+  const t1 = new Date();
+  const res1 = await smartweave.readContract(arweave, CONTRACT_ID);
+  const t2 = new Date();
+  console.log(`Done in ${t2 - t1}\n\nReading recursive contract with SWICW`);
+
+  const res2 = await swicw.readContract(arweave, CONTRACT_ID, height);
   const t3 = new Date();
   console.log(
     `Done in ${
       t3 - t2
-    }\n\nRereading recursive contract with swicw (should now be cached)`
+    }\n\nRereading recursive contract with SWICW (should now be cached)`
   );
 
-  const res3 = await swicw.readContract(arweave, CONTRACT_ID);
+  const res3 = await swicw.readContract(arweave, CONTRACT_ID, height);
   const t4 = new Date();
   console.log(`Done in ${t4 - t3}`);
 
-  // console.log(
-  //   "\nswicw matches SmartWeave?",
-  //   JSON.stringify(res1) === JSON.stringify(res2)
-  // );
+  console.log(
+    "\nSWICW matches SmartWeave?",
+    JSON.stringify(res1) === JSON.stringify(res2)
+  );
 }
 
-main().then(() => console.log("Terminated"));
+(async () => await main())();
