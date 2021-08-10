@@ -54,33 +54,38 @@ async function readContract(arweave, contractId, height, returnValidity) {
 
   // Execute every transaction in queue until empty
   while (cache.txQueue.length) {
-    // Get transaction and corresponding contract
+    // Dequeue the transaction
     const txInfo = cache.txQueue.shift();
-    const contractIndex = txInfo.node.tags.findIndex(
-      (tag) => tag.name === "Contract" && tag.value in cache.contracts
-    );
-    const txContractId = txInfo.node.tags[contractIndex].value;
-    const contractInfo = cache.contracts[txContractId].info;
-    const inputTag = txInfo.node.tags[contractIndex + 1];
+
+    // Find contract and input tag
+    let txContractId, input;
+    const tags = txInfo.node.tags;
+    for (let i = 0; i < tags.length - 1; ++i) {
+      if (
+        tags[i].name === "Contract" &&
+        tags[i].value in cache.contracts &&
+        tags[i + 1].name === "Input"
+      ) {
+        txContractId = tags[i].value;
+        input = tags[i + 1].value;
+        break;
+      }
+    }
+    if (!txContractId) continue;
 
     // Get transaction input
-    if (!inputTag || inputTag.name !== "Input") continue;
-    let input;
     try {
-      input = JSON.parse(inputTag.value);
+      input = JSON.parse(input);
     } catch (e) {
       continue;
     }
     if (!input) continue;
 
     // Setup execution env
+    const { handler, swGlobal } = cache.contracts[txContractId].info;
     const currentTx = txInfo.node;
-    const interaction = {
-      input,
-      caller: currentTx.owner.address
-    };
-    const { handler, swGlobal } = contractInfo;
     swGlobal._activeTx = currentTx;
+    const interaction = { input, caller: currentTx.owner.address };
     const validity = cache.contracts[txContractId].validity;
     if (currentTx.block) cache.height = currentTx.block.height;
 
