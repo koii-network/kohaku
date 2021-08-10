@@ -18,23 +18,23 @@ async function main() {
 
   const height = (await arweave.network.getInfo()).height;
 
-  console.log("Reading recursive contract with SmartWeave", height);
+  console.log("Reading recursive contract with SmartWeave");
   const t1 = new Date();
-  const res1 = await smartweave.readContract(arweave, CONTRACT_ID);
+  const res1 = await smartweave.readContract(arweave, CONTRACT_ID, height);
   const t2 = new Date();
-  console.log(`Done in ${t2 - t1}\n\nReading recursive contract with SWICW`);
+  console.log(`Done in ${t2 - t1}ms\n\nReading recursive contract with SWICW`);
 
   const res2 = await swicw.readContract(arweave, CONTRACT_ID, height);
   const t3 = new Date();
   console.log(
     `Done in ${
       t3 - t2
-    }\n\nRereading recursive contract with SWICW (should now be cached)`
+    }ms\n\nRereading recursive contract with SWICW (should now be cached)`
   );
 
   const res3 = await swicw.readContract(arweave, CONTRACT_ID, height);
   const t4 = new Date();
-  console.log(`Done in ${t4 - t3}`);
+  console.log(`Done in ${t4 - t3}ms`);
 
   console.log(
     "\nSWICW matches SmartWeave?",
