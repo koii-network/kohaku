@@ -102,10 +102,18 @@ async function readContract(arweave, contractId, height, returnValidity) {
     if (resBase) return resBase;
 
     // Fetch and sort transactions for this contract since cache height up to height
-    cache.txQueue = cache.txQueue.concat(
-      await fetchTransactions(arweave, [_contractId], cache.height + 1, _height)
+    const newTxs = await fetchTransactions(
+      arweave,
+      [_contractId],
+      cache.height + 1,
+      _height
     );
-    await sortTransactions(arweave, cache.txQueue);
+    if (newTxs.length) {
+      cache.txQueue = cache.txQueue.concat(newTxs);
+      await sortTransactions(arweave, cache.txQueue);
+    }
+
+    return cloneReturn(_contractId, _returnValidity);
   }
 
   /**
