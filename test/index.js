@@ -18,7 +18,7 @@ async function main() {
 
   const height = (await arweave.network.getInfo()).height;
 
-  console.log("Reading recursive contract with SmartWeave");
+  console.log("Reading recursive contract with SmartWeave", height);
   const t1 = new Date();
   const res1 = await smartweave.readContract(arweave, CONTRACT_ID);
   const t2 = new Date();
