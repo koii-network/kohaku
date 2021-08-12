@@ -102,7 +102,7 @@ async function readContract(arweave, contractId, height, returnValidity) {
     swGlobal._activeTx = currentTx;
     const interaction = { input, caller: currentTx.owner.address };
     const validity = newCache.contracts[txContractId].validity;
-    if (currentTx.block) newCache.height = currentTx.block.height;
+    newCache.height = currentTx.block.height;
 
     // Execute and update contract
     const result = await execute(
