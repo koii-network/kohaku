@@ -35,9 +35,11 @@ async function main() {
   const t4 = new Date();
   console.log(`Done in ${t4 - t3}ms`);
 
+  const swState = JSON.stringify(res1)
   console.log(
     "\nKohaku matches SmartWeave?",
-    JSON.stringify(res1) === JSON.stringify(res2)
+    JSON.stringify(res2) === swState,
+    JSON.stringify(res3) === swState,
   );
 }
 
