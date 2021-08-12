@@ -1,4 +1,4 @@
-const swicw = require("..");
+const kohaku = require("..");
 const Arweave = require("arweave");
 const smartweave = require("smartweave");
 
@@ -16,28 +16,27 @@ async function main() {
     timeout: 60000
   });
 
-  const height = (await arweave.network.getInfo()).height;
-
   console.log("Reading recursive contract with SmartWeave");
   const t1 = new Date();
-  const res1 = await smartweave.readContract(arweave, CONTRACT_ID, height);
+  const res1 = await smartweave.readContract(arweave, CONTRACT_ID);
   const t2 = new Date();
-  console.log(`Done in ${t2 - t1}ms\n\nReading recursive contract with SWICW`);
+  console.log(`Done in ${t2 - t1}ms\n\nReading recursive contract with Kohaku`);
 
-  const res2 = await swicw.readContract(arweave, CONTRACT_ID, height);
+  const res2 = await kohaku.readContract(arweave, CONTRACT_ID);
   const t3 = new Date();
   console.log(
     `Done in ${
       t3 - t2
-    }ms\n\nRereading recursive contract with SWICW (should now be cached)`
+    }ms\n\nRereading recursive contract with Kohaku (should now be cached)`
   );
 
-  const res3 = await swicw.readContract(arweave, CONTRACT_ID, height);
+  // This can be massively sped up by passing kohaku.getCacheHeight() as the height param
+  const res3 = await kohaku.readContract(arweave, CONTRACT_ID);
   const t4 = new Date();
   console.log(`Done in ${t4 - t3}ms`);
 
   console.log(
-    "\nSWICW matches SmartWeave?",
+    "\nKohaku matches SmartWeave?",
     JSON.stringify(res1) === JSON.stringify(res2)
   );
 }

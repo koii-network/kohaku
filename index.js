@@ -7,11 +7,13 @@ const { arrayToHex } = require("smartweave/lib/utils");
 const MAX_REQUEST = 100;
 
 // Cache singleton
-const cache = {
+var cache = {
   contracts: {},
   height: 0,
-  txQueue: []
 };
+var newCache;
+var txQueue;
+
 
 /**
  * Reads contract and returns state if height matches, otherwise, executes
@@ -23,39 +25,52 @@ const cache = {
  */
 async function readContract(arweave, contractId, height, returnValidity) {
   // If height undefined, default to current network height
-  height = height || (await arweave.network.getInfo()).height;
+  height ||= (await arweave.network.getInfo()).height;
+
+  // Clone cache to new cache (except for info, copy reference)
+  const newContracts = {};
+  for (const key in cache.contracts) {
+    const contract = cache.contracts[key];
+    newContracts[key] = {
+      info: contract.info,
+      state: clone(contract.state),
+      validity: clone(contract.validity)
+    }
+  }
+  newCache = {
+    contracts: newContracts,
+    height: cache.height
+  };
 
   // If not contract in local cache
-  if (!cache.contracts[contractId]) {
+  if (!newCache.contracts[contractId]) {
     // Load and cache it
     const contractInfo = await loadContract(arweave, contractId);
     contractInfo.swGlobal.contracts.readContractState = internalReadContract;
-    cache.contracts[contractId] = {
+    newCache.contracts[contractId] = {
       info: contractInfo,
       state: JSON.parse(contractInfo.initState),
       validity: {}
     };
   }
 
-  if (height < cache.height)
-    throw new Error("SWICW read heights must be non-decreasing");
-  if (height === cache.height) return cloneReturn(contractId, returnValidity);
+  if (height < newCache.height)
+    throw new Error("Kohaku read heights must be non-decreasing");
+  if (height === newCache.height) return cloneReturn(contractId, returnValidity);
 
   // Fetch and sort transactions for all contracts since cache height up to height
-  cache.txQueue = cache.txQueue.concat(
-    await fetchTransactions(
-      arweave,
-      Object.keys(cache.contracts),
-      cache.height + 1,
-      height
-    )
-  );
-  await sortTransactions(arweave, cache.txQueue);
+  txQueue = await fetchTransactions(
+    arweave,
+    Object.keys(newCache.contracts),
+    newCache.height + 1,
+    height
+  )
+  await sortTransactions(arweave, txQueue);
 
   // Execute every transaction in queue until empty
-  while (cache.txQueue.length) {
+  while (txQueue.length) {
     // Dequeue the transaction
-    const txInfo = cache.txQueue.shift();
+    const txInfo = txQueue.shift();
 
     // Find contract and input tag
     let txContractId, input;
@@ -63,7 +78,7 @@ async function readContract(arweave, contractId, height, returnValidity) {
     for (let i = 0; i < tags.length - 1; ++i) {
       if (
         tags[i].name === "Contract" &&
-        tags[i].value in cache.contracts &&
+        tags[i].value in newCache.contracts &&
         tags[i + 1].name === "Input"
       ) {
         txContractId = tags[i].value;
@@ -82,25 +97,25 @@ async function readContract(arweave, contractId, height, returnValidity) {
     if (!input) continue;
 
     // Setup execution env
-    const { handler, swGlobal } = cache.contracts[txContractId].info;
+    const { handler, swGlobal } = newCache.contracts[txContractId].info;
     const currentTx = txInfo.node;
     swGlobal._activeTx = currentTx;
     const interaction = { input, caller: currentTx.owner.address };
-    const validity = cache.contracts[txContractId].validity;
-    if (currentTx.block) cache.height = currentTx.block.height;
+    const validity = newCache.contracts[txContractId].validity;
+    if (currentTx.block) newCache.height = currentTx.block.height;
 
     // Execute and update contract
     const result = await execute(
       handler,
       interaction,
-      cache.contracts[txContractId].state
+      newCache.contracts[txContractId].state
     );
     validity[currentTx.id] = result.type === "ok";
-    cache.contracts[txContractId].state = result.state;
+    newCache.contracts[txContractId].state = result.state;
   }
 
   // Update state cache and return state
-  cache.height = height;
+  cache = newCache; // Only update cache here so any errors won't mutate the cache
   return cloneReturn(contractId, returnValidity);
 
   // TODO FIXME Contract evolution is not supported
@@ -110,18 +125,18 @@ async function readContract(arweave, contractId, height, returnValidity) {
    * @param {string} contractId Transaction Id of the contract
    */
   async function internalReadContract(_contractId, _height, _returnValidity) {
-    _height = _height || cache.height;
-    if (_height !== cache.height)
+    _height ||= newCache.height;
+    if (_height !== newCache.height)
       throw new Error(
-        "SWICW internal read height must match transaction height"
+        "Kohaku internal read height must match transaction height"
       );
 
     // If not contract in local cache
-    if (!cache.contracts[_contractId]) {
+    if (!newCache.contracts[_contractId]) {
       // Load and cache it
       const contractInfo = await loadContract(arweave, _contractId);
       contractInfo.swGlobal.contracts.readContractState = internalReadContract;
-      cache.contracts[_contractId] = {
+      newCache.contracts[_contractId] = {
         info: contractInfo,
         state: JSON.parse(contractInfo.initState),
         validity: {}
@@ -131,12 +146,12 @@ async function readContract(arweave, contractId, height, returnValidity) {
       const newTxs = await fetchTransactions(
         arweave,
         [_contractId],
-        cache.height + 1,
+        newCache.height + 1,
         height
       );
       if (newTxs.length) {
-        cache.txQueue = cache.txQueue.concat(newTxs);
-        await sortTransactions(arweave, cache.txQueue);
+        txQueue = txQueue.concat(newTxs);
+        await sortTransactions(arweave, txQueue);
       }
     }
 
@@ -151,14 +166,20 @@ async function readContract(arweave, contractId, height, returnValidity) {
  * @returns {{any, any} | any} State or object that includes the state and validity array
  */
 function cloneReturn(contractId, returnValidity) {
-  const cacheContract = cache.contracts[contractId];
-  const state = JSON.parse(JSON.stringify(cacheContract.state));
+  const cacheContract = newCache.contracts[contractId];
+  const state = clone(cacheContract.state);
+  if (!returnValidity) return state;
 
-  if (returnValidity) {
-    const validity = JSON.parse(JSON.stringify(cacheContract.state));
-    return { state, validity };
-  }
-  return state;
+  const validity = clone(cacheContract.validity);
+  return { state, validity };
+}
+
+/**
+ * Create a deep clone of a object
+ * @param {*} obj Object to be cloned
+ */
+function clone(obj) {
+  return JSON.parse(JSON.stringify(obj));
 }
 
 /**
@@ -200,41 +221,31 @@ async function fetchTransactions(arweave, contractIds, min, max) {
   return txInfos;
 }
 
-// Exact copy of smartweave implementation
-async function sortTransactions(arweave, txInfos) {
-  const addKeysFuncs = txInfos.map((tx) => addSortKey(arweave, tx));
-  await Promise.all(addKeysFuncs);
-  txInfos.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+/**
+ * Get cache height
+ * returns {number} Last guaranteed block height processed
+ */
+function getCacheHeight() {
+  return cache.height;
 }
-async function addSortKey(arweave, txInfo) {
-  const { node } = txInfo;
-  const blockHashBytes = arweave.utils.b64UrlToBuffer(node.block.id);
-  const txIdBytes = arweave.utils.b64UrlToBuffer(node.id);
-  const concatted = arweave.utils.concatBuffers([blockHashBytes, txIdBytes]);
-  const hashed = arrayToHex(await arweave.crypto.hash(concatted));
-  const blockHeight = `000000${node.block.height}`.slice(-12);
-  txInfo.sortKey = `${blockHeight},${hashed}`;
-}
+
+/**
+ * Gets the next GQL page and check for null blocks. Throws error on null block
+ * @param {Arweave} arweave Arweave instance
+ * @param {*} variables GQL query variables
+ * @returns {*[]} Array of transactions
+ */
 async function getNextPage(arweave, variables) {
   const query = `query Transactions($tags: [TagFilter!]!, $blockFilter: BlockFilter!, $first: Int!, $after: String) {
     transactions(tags: $tags, block: $blockFilter, first: $first, sort: HEIGHT_ASC, after: $after) {
-      pageInfo {
-        hasNextPage
-      }
+      pageInfo { hasNextPage }
       edges {
         node {
           id
           owner { address }
           recipient
-          tags {
-            name
-            value
-          }
-          block {
-            height
-            id
-            timestamp
-          }
+          tags { name value }
+          block { height id timestamp }
           fee { winston }
           quantity { winston }
           parent { id }
@@ -254,12 +265,35 @@ async function getNextPage(arweave, variables) {
   }
   const data = response.data;
   const txs = data.data.transactions;
+
+  if (txs.edges.some((tx) => tx.node.block === null)){
+    const nullBlockError = new Error("Null block found");
+    nullBlockError.name = "Null block";
+    throw nullBlockError;
+  }
   return txs;
+}
+
+// Exact copy of smartweave implementation
+async function sortTransactions(arweave, txInfos) {
+  const addKeysFuncs = txInfos.map((tx) => addSortKey(arweave, tx));
+  await Promise.all(addKeysFuncs);
+  txInfos.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+}
+async function addSortKey(arweave, txInfo) {
+  const { node } = txInfo;
+  const blockHashBytes = arweave.utils.b64UrlToBuffer(node.block.id);
+  const txIdBytes = arweave.utils.b64UrlToBuffer(node.id);
+  const concatted = arweave.utils.concatBuffers([blockHashBytes, txIdBytes]);
+  const hashed = arrayToHex(await arweave.crypto.hash(concatted));
+  const blockHeight = `000000${node.block.height}`.slice(-12);
+  txInfo.sortKey = `${blockHeight},${hashed}`;
 }
 
 // Create a proxy wrapper over the smartweave object for exporting
 const smartweaveProxy = {
-  readContract
+  readContract,
+  getCacheHeight
 };
 for (const key in smartweave)
   if (key !== "readContract") smartweaveProxy[key] = smartweave[key];
