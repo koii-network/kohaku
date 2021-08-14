@@ -25,7 +25,7 @@ var txQueue;
  */
 async function readContract(arweave, contractId, height, returnValidity) {
   // If height undefined, default to current network height
-  height ||= (await arweave.network.getInfo()).height;
+  height = height || (await arweave.network.getInfo()).height;
 
   // Clone cache to new cache (except for info, copy reference)
   const newContracts = {};
