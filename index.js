@@ -7,13 +7,12 @@ const { arrayToHex } = require("smartweave/lib/utils");
 const MAX_REQUEST = 100;
 
 // Cache singleton
-var cache = {
+let cache = {
   contracts: {},
   height: 0,
 };
-var newCache;
-var txQueue;
-
+let newCache;
+let txQueue;
 
 /**
  * Reads contract and returns state if height matches, otherwise, executes
@@ -27,6 +26,9 @@ async function readContract(arweave, contractId, height, returnValidity) {
   // If height undefined, default to current network height
   height = height || (await arweave.network.getInfo()).height;
 
+  if (!Object.keys(cache.contracts).length)
+    console.log("Initializing Kohaku cache with root", contractId);
+  
   // Clone cache to new cache (except for info, copy reference)
   const newContracts = {};
   for (const key in cache.contracts) {
