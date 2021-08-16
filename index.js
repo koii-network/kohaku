@@ -125,7 +125,7 @@ async function readContract(arweave, contractId, height, returnValidity) {
    * @param {string} contractId Transaction Id of the contract
    */
   async function internalReadContract(_contractId, _height, _returnValidity) {
-    _height ||= newCache.height;
+    _height = _height || newCache.height;
     if (_height !== newCache.height)
       throw new Error(
         "Kohaku internal read height must match transaction height"
