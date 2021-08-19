@@ -9,10 +9,36 @@ const MAX_REQUEST = 100;
 // Cache singleton
 let cache = {
   contracts: {},
-  height: 0,
+  height: 0
 };
 let newCache;
 let txQueue;
+let readLock = false;
+
+/**
+ * Mutex-like lock to prevent state rewriting
+ * @param {Arweave} arweave Arweave client instance
+ * @param {string} contractId Transaction Id of the contract
+ * @param {number} height if specified the contract will be replayed only to this block height
+ * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
+ */
+async function readContract(arweave, contractId, height, returnValidity) {
+  if (readLock) return _readContract(arweave, contractId, -1, returnValidity);
+  readLock = true;
+  try {
+    const res = await _readContract(
+      arweave,
+      contractId,
+      height,
+      returnValidity
+    );
+    readLock = false;
+    return res;
+  } catch (e) {
+    readLock = false;
+    throw e;
+  }
+}
 
 /**
  * Reads contract and returns state if height matches, otherwise, executes
@@ -22,13 +48,14 @@ let txQueue;
  * @param {number} height if specified the contract will be replayed only to this block height
  * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
  */
-async function readContract(arweave, contractId, height, returnValidity) {
+async function _readContract(arweave, contractId, height, returnValidity) {
   // If height undefined, default to current network height
-  height = height || (await arweave.network.getInfo()).height;
+  if (typeof height !== "number")
+    height = (await arweave.network.getInfo()).height;
 
   if (!Object.keys(cache.contracts).length)
     console.log("Initializing Kohaku cache with root", contractId);
-  
+
   // Clone cache to new cache (except for info, copy reference)
   const newContracts = {};
   for (const key in cache.contracts) {
@@ -37,7 +64,7 @@ async function readContract(arweave, contractId, height, returnValidity) {
       info: contract.info,
       state: clone(contract.state),
       validity: clone(contract.validity)
-    }
+    };
   }
   newCache = {
     contracts: newContracts,
@@ -56,9 +83,10 @@ async function readContract(arweave, contractId, height, returnValidity) {
     };
   }
 
+  if (height === newCache.height || height === -1)
+    return cloneReturn(contractId, returnValidity);
   if (height < newCache.height)
     throw new Error("Kohaku read heights must be non-decreasing");
-  if (height === newCache.height) return cloneReturn(contractId, returnValidity);
 
   // Fetch and sort transactions for all contracts since cache height up to height
   txQueue = await fetchTransactions(
@@ -66,7 +94,7 @@ async function readContract(arweave, contractId, height, returnValidity) {
     Object.keys(newCache.contracts),
     newCache.height + 1,
     height
-  )
+  );
   await sortTransactions(arweave, txQueue);
 
   // Execute every transaction in queue until empty
@@ -268,7 +296,7 @@ async function getNextPage(arweave, variables) {
   const data = response.data;
   const txs = data.data.transactions;
 
-  if (txs.edges.some((tx) => tx.node.block === null)){
+  if (txs.edges.some((tx) => tx.node.block === null)) {
     const nullBlockError = new Error("Null block found");
     nullBlockError.name = "Null block";
     throw nullBlockError;
