@@ -83,7 +83,7 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     };
   }
 
-  if (height < newCache.height || height !== -1)
+  if (height < newCache.height && height !== -1)
     console.warn(
       "Kohaku read height is less than cache height, defaulting to cache height"
     );
