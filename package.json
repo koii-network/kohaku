@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
-  "scripts" : {
-    "test" : "node test"
+  "scripts": {
+    "test": "node test"
   },
   "dependencies": {
     "smartweave": "^0.4.41"

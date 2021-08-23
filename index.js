@@ -83,10 +83,11 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     };
   }
 
-  if (height === newCache.height || height === -1)
-    return cloneReturn(contractId, returnValidity);
-  if (height < newCache.height)
-    throw new Error("Kohaku read heights must be non-decreasing");
+  if (height < newCache.height || height !== -1)
+    console.warn(
+      "Kohaku read height is less than cache height, defaulting to cache height"
+    );
+  if (height <= newCache.height) return cloneReturn(contractId, returnValidity);
 
   // Fetch and sort transactions for all contracts since cache height up to height
   txQueue = await fetchTransactions(
