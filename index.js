@@ -63,7 +63,8 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     newContracts[key] = {
       info: contract.info,
       state: clone(contract.state),
-      validity: clone(contract.validity)
+      validity: clone(contract.validity),
+      readFull: contract.readFull
     };
   }
   newCache = {
@@ -79,7 +80,8 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     newCache.contracts[contractId] = {
       info: contractInfo,
       state: JSON.parse(contractInfo.initState),
-      validity: {}
+      validity: {},
+      readFull: !contractInfo.contractSrc.includes("readContractState")
     };
   }
 
@@ -90,12 +92,21 @@ async function _readContract(arweave, contractId, height, returnValidity) {
   if (height <= newCache.height) return cloneReturn(contractId, returnValidity);
 
   // Fetch and sort transactions for all contracts since cache height up to height
+  const readFullIds = { true: [], false: [] };
+  const entires = Object.entries(newCache.contracts);
+  for (const pair of entires) readFullIds[pair[1].readFull].push(pair[0]);
   txQueue = await fetchTransactions(
     arweave,
-    Object.keys(newCache.contracts),
+    readFullIds.false,
     newCache.height + 1,
     height
   );
+  if (readFullIds.true.length) {
+    txQueue = txQueue.concat(
+      await fetchTransactions(arweave, readFullIds.true, undefined, height)
+    );
+    for (const id of readFullIds.true) newCache.contracts[id].readFull = false;
+  }
   await sortTransactions(arweave, txQueue);
 
   // Execute every transaction in queue until empty
@@ -170,14 +181,17 @@ async function _readContract(arweave, contractId, height, returnValidity) {
       newCache.contracts[_contractId] = {
         info: contractInfo,
         state: JSON.parse(contractInfo.initState),
-        validity: {}
+        validity: {},
+        readFull: false
       };
 
       // Fetch and sort transactions for this contract since cache height up to height
       const newTxs = await fetchTransactions(
         arweave,
         [_contractId],
-        newCache.height + 1,
+        contractInfo.contractSrc.includes("readContractState")
+          ? newCache.height + 1
+          : undefined,
         height
       );
       if (newTxs.length) {
