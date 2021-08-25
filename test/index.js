@@ -6,6 +6,7 @@ const smartweave = require("smartweave");
 // 0Z4z_Z6tLza640a9aB6Y4wsUHO80i2JAgOa5rZZ7TsA new task contract
 // IpEKWpnCCa09-fALeXsQmVD_UYHCuyblVpgPOrsMXEM old task contract
 const CONTRACT_ID = "b8y_FD82vSaE1skZtqPqtz9q6xiuZnqRcCm9mV90SuY";
+const NONREC_CONTRACT_ID = "qUUBzVLsdu0S_6nFu7jMmE1SU6elIW44quH6dXgY6BE";
 
 async function main() {
   const arweave = Arweave.init({
@@ -30,16 +31,29 @@ async function main() {
     }ms\n\nRereading recursive contract with Kohaku (should now be cached)`
   );
 
-  // This can be massively sped up by passing kohaku.getCacheHeight() as the height param
   const res3 = await kohaku.readContract(arweave, CONTRACT_ID);
   const t4 = new Date();
   console.log(`Done in ${t4 - t3}ms`);
 
   const swState = JSON.stringify(res1);
   console.log(
-    "\nKohaku matches SmartWeave?",
+    "\nKohaku matches SmartWeave for recursive contract?",
     JSON.stringify(res2) === swState,
     JSON.stringify(res3) === swState
+  );
+
+  console.log("\nReading non-recursive contract with SmartWeave");
+  const res4 = await smartweave.readContract(arweave, NONREC_CONTRACT_ID);
+  const t5 = new Date();
+  console.log(`Done in ${t5 - t4}ms\n\nReading recursive contract with Kohaku`);
+
+  const res5 = await kohaku.readContract(arweave, NONREC_CONTRACT_ID);
+  const t6 = new Date();
+  console.log(`Done in ${t6 - t5}ms`);
+
+  console.log(
+    "\nKohaku matches SmartWeave for non-recursive contract?",
+    JSON.stringify(res4) === JSON.stringify(res5)
   );
 }
 

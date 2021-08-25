@@ -16,6 +16,20 @@ let txQueue;
 let readLock = false;
 
 /**
+ * Reads a contract from the cache, will error if contract is not present in cache
+ * @param {string} contractId Transaction Id of the contract
+ * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
+ * @returns {{any, any} | any} State or object that includes the state and validity array
+ */
+async function readContractCache(contractId, returnValidity) {
+  const cacheContract = cache.contracts[contractId];
+  const state = clone(cacheContract.state);
+  if (!returnValidity) return state;
+  const validity = clone(cacheContract.validity);
+  return { state, validity };
+}
+
+/**
  * Mutex-like lock to prevent state rewriting
  * @param {Arweave} arweave Arweave client instance
  * @param {string} contractId Transaction Id of the contract
@@ -337,6 +351,7 @@ async function addSortKey(arweave, txInfo) {
 
 // Create a proxy wrapper over the smartweave object for exporting
 const smartweaveProxy = {
+  readContractCache,
   readContract,
   getCacheHeight
 };
