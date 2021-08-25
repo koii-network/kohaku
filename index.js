@@ -21,7 +21,7 @@ let readLock = false;
  * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
  * @returns {{any, any} | any} State or object that includes the state and validity array
  */
-async function readContractCache(contractId, returnValidity) {
+function readContractCache(contractId, returnValidity) {
   const cacheContract = cache.contracts[contractId];
   const state = clone(cacheContract.state);
   if (!returnValidity) return state;
