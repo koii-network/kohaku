@@ -45,7 +45,9 @@ async function main() {
   console.log("\nReading non-recursive contract with SmartWeave");
   const res4 = await smartweave.readContract(arweave, NONREC_CONTRACT_ID);
   const t5 = new Date();
-  console.log(`Done in ${t5 - t4}ms\n\nReading recursive contract with Kohaku`);
+  console.log(
+    `Done in ${t5 - t4}ms\n\nReading non-recursive contract with Kohaku`
+  );
 
   const res5 = await kohaku.readContract(arweave, NONREC_CONTRACT_ID);
   const t6 = new Date();
@@ -54,6 +56,23 @@ async function main() {
   console.log(
     "\nKohaku matches SmartWeave for non-recursive contract?",
     JSON.stringify(res4) === JSON.stringify(res5)
+  );
+
+  console.log("\nExporting Kohaku cache");
+  console.time("export");
+  const exp = kohaku.exportCache();
+  console.timeEnd("export");
+
+  console.log("Importing kohaku cache");
+  console.time("import");
+  await kohaku.importCache(arweave, exp);
+  console.timeEnd("import");
+
+  console.log("Verifying import integrity");
+  const res6 = await kohaku.readContract(arweave, CONTRACT_ID);
+  console.log(
+    "Imported Kohaku read matches SmartWeave?",
+    swState == JSON.stringify(res6)
   );
 }
 

@@ -1,9 +1,10 @@
+const { serialize, deserialize } = require("v8");
 const smartweave = require("smartweave");
 const { execute } = require("smartweave/lib/contract-step");
 const { loadContract } = require("smartweave/lib/contract-load");
 const { arrayToHex } = require("smartweave/lib/utils");
 
-// the maximum number of transactions we can get from graphql at once
+// Maximum number of transactions we can get from graphql at once
 const MAX_REQUEST = 100;
 
 // Cache singleton
@@ -11,21 +12,38 @@ let cache = {
   contracts: {},
   height: 0
 };
-let newCache;
-let txQueue;
 let readLock = false;
 
+async function importCache(arweave, importBuffer) {
+  cache = deserialize(importBuffer);
+  const contractInfoProms = Object.keys(cache.contracts).map((contractId) =>
+    loadContract(arweave, contractId)
+  );
+  const contractInfos = await Promise.all(contractInfoProms);
+  for (const contractInfo of contractInfos)
+    cache.contracts[contractInfo.id]["info"] = contractInfo;
+}
+
+function exportCache() {
+  const contracts = {};
+  for (const id in cache.contracts) {
+    contracts[id] = {};
+    for (const key in cache.contracts[id])
+      if (key !== "info") contracts[id][key] = cache.contracts[id][key];
+  }
+  return serialize({ contracts, height: cache.height });
+}
+
 /**
- * Reads a contract from the cache, will error if contract is not present in cache
+ * Reads a contract from the cache as a string, will error if contract is not present in cache
  * @param {string} contractId Transaction Id of the contract
  * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
- * @returns {{any, any} | any} State or object that includes the state and validity array
+ * @returns {{string} | {string, string}} String or object that includes the state and validity array as strings
  */
 function readContractCache(contractId, returnValidity) {
-  const cacheContract = cache.contracts[contractId];
-  const state = clone(cacheContract.state);
+  const state = cache.contracts[contractId].state;
   if (!returnValidity) return state;
-  const validity = clone(cacheContract.validity);
+  const validity = cache.contracts[contractId].validity;
   return { state, validity };
 }
 
@@ -76,12 +94,12 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     const contract = cache.contracts[key];
     newContracts[key] = {
       info: contract.info,
-      state: clone(contract.state),
-      validity: clone(contract.validity),
+      state: JSON.parse(contract.state),
+      validity: JSON.parse(contract.validity),
       readFull: contract.readFull
     };
   }
-  newCache = {
+  const newCache = {
     contracts: newContracts,
     height: cache.height
   };
@@ -90,7 +108,6 @@ async function _readContract(arweave, contractId, height, returnValidity) {
   if (!newCache.contracts[contractId]) {
     // Load and cache it
     const contractInfo = await loadContract(arweave, contractId);
-    contractInfo.swGlobal.contracts.readContractState = internalReadContract;
     newCache.contracts[contractId] = {
       info: contractInfo,
       state: JSON.parse(contractInfo.initState),
@@ -99,17 +116,24 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     };
   }
 
+  // Return what's in the current cache if height <= cache height
   if (height < newCache.height && height !== -1)
     console.warn(
       "Kohaku read height is less than cache height, defaulting to cache height"
     );
-  if (height <= newCache.height) return cloneReturn(contractId, returnValidity);
+  if (height <= newCache.height) {
+    const cacheContract = newCache.contracts[contractId];
+    const state = cacheContract.state;
+    if (!returnValidity) return state;
+    const validity = cacheContract.validity;
+    return { state, validity };
+  }
 
   // Fetch and sort transactions for all contracts since cache height up to height
   const readFullIds = { true: [], false: [] };
   const entires = Object.entries(newCache.contracts);
   for (const pair of entires) readFullIds[pair[1].readFull].push(pair[0]);
-  txQueue = await fetchTransactions(
+  let txQueue = await fetchTransactions(
     arweave,
     readFullIds.false,
     newCache.height + 1,
@@ -156,6 +180,7 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     const { handler, swGlobal } = newCache.contracts[txContractId].info;
     const currentTx = txInfo.node;
     swGlobal._activeTx = currentTx;
+    swGlobal.contracts.readContractState = internalReadContract;
     const interaction = { input, caller: currentTx.owner.address };
     const validity = newCache.contracts[txContractId].validity;
     newCache.height = currentTx.block.height;
@@ -170,9 +195,20 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     newCache.contracts[txContractId].state = result.state;
   }
 
-  // Update state cache and return state
-  cache = newCache; // Only update cache here so any errors won't mutate the cache
-  return cloneReturn(contractId, returnValidity);
+  // Update state cache and return state, only update cache here so any errors won't mutate the cache
+  for (const id in newCache.contracts) {
+    const contract = newCache.contracts[id];
+    // Cache as string for better immutability and clone performance
+    contract.state = JSON.stringify(contract.state);
+    contract.validity = JSON.stringify(contract.validity);
+  }
+  cache = newCache;
+
+  // Return result as an object
+  const state = JSON.parse(cache.contracts[contractId].state);
+  if (!returnValidity) return state;
+  const validity = JSON.parse(cache.contracts[contractId].validity);
+  return { state, validity };
 
   // TODO FIXME Contract evolution is not supported
 
@@ -214,31 +250,13 @@ async function _readContract(arweave, contractId, height, returnValidity) {
       }
     }
 
-    return cloneReturn(_contractId, _returnValidity);
+    // Clone output variables so newCache state isn't mutated
+    const cacheContract = newCache.contracts[_contractId];
+    const state = deserialize(serialize(cacheContract.state));
+    if (!_returnValidity) return state;
+    const validity = deserialize(serialize(cacheContract.validity));
+    return { state, validity };
   }
-}
-
-/**
- * Used to clone output variables so state cached isn't mutated
- * @param {string} contractId Contract ID whose state to clone
- * @param {boolean} returnValidity Wether to include the validity array
- * @returns {{any, any} | any} State or object that includes the state and validity array
- */
-function cloneReturn(contractId, returnValidity) {
-  const cacheContract = newCache.contracts[contractId];
-  const state = clone(cacheContract.state);
-  if (!returnValidity) return state;
-
-  const validity = clone(cacheContract.validity);
-  return { state, validity };
-}
-
-/**
- * Create a deep clone of a object
- * @param {*} obj Object to be cloned
- */
-function clone(obj) {
-  return JSON.parse(JSON.stringify(obj));
 }
 
 /**
@@ -353,7 +371,9 @@ async function addSortKey(arweave, txInfo) {
 const smartweaveProxy = {
   readContractCache,
   readContract,
-  getCacheHeight
+  getCacheHeight,
+  importCache,
+  exportCache
 };
 for (const key in smartweave)
   if (key !== "readContract") smartweaveProxy[key] = smartweave[key];
