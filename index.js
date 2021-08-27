@@ -15,7 +15,7 @@ let cache = {
 let readLock = false;
 
 async function importCache(arweave, importBuffer) {
-  cache = deserialize(importBuffer);
+  cache = JSON.parse(importBuffer);
   const contractInfoProms = Object.keys(cache.contracts).map((contractId) =>
     loadContract(arweave, contractId)
   );
@@ -31,7 +31,7 @@ function exportCache() {
     for (const key in cache.contracts[id])
       if (key !== "info") contracts[id][key] = cache.contracts[id][key];
   }
-  return serialize({ contracts, height: cache.height });
+  return JSON.stringify({ contracts, height: cache.height });
 }
 
 /**
