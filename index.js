@@ -1,7 +1,10 @@
 const { serialize, deserialize } = require("v8");
 const smartweave = require("smartweave");
 const { execute } = require("smartweave/lib/contract-step");
-const { loadContract } = require("smartweave/lib/contract-load");
+const {
+  loadContract,
+  createContractExecutionEnvironment
+} = require("smartweave/lib/contract-load");
 const { arrayToHex } = require("smartweave/lib/utils");
 
 // Maximum number of transactions we can get from graphql at once
@@ -14,24 +17,62 @@ let cache = {
 };
 let readLock = false;
 
-async function importCache(arweave, importBuffer) {
-  cache = JSON.parse(importBuffer);
-  const contractInfoProms = Object.keys(cache.contracts).map((contractId) =>
-    loadContract(arweave, contractId)
-  );
-  const contractInfos = await Promise.all(contractInfoProms);
-  for (const contractInfo of contractInfos)
-    cache.contracts[contractInfo.id]["info"] = contractInfo;
+/**
+ * Imports a cache externally. Used to improve startup times
+ * @param {*} arweave Arweave client instance
+ * @param {string} importString JSON string to be deserialized
+ */
+async function importCache(arweave, importString) {
+  cache = JSON.parse(importString);
+  for (const contractId in cache.contracts) {
+    const contractInfo = cache.contracts[contractId].info;
+    const { handler, swGlobal } = createContractExecutionEnvironment(
+      arweave,
+      contractInfo.contractSrc,
+      contractId,
+      contractInfo.contractOwner
+    );
+    contractInfo.handler = handler;
+    contractInfo.swGlobal = swGlobal;
+  }
 }
 
+/**
+ * Exports the cache as a serialized JSON string, this can be slow so use sparingly
+ * @returns {string} Cache serialized in JSON as a string
+ */
 function exportCache() {
   const contracts = {};
   for (const id in cache.contracts) {
     contracts[id] = {};
     for (const key in cache.contracts[id])
       if (key !== "info") contracts[id][key] = cache.contracts[id][key];
+      else {
+        contracts[id].info = {};
+        for (const infoKey in cache.contracts[id].info)
+          if (infoKey !== "handler" && infoKey !== "swGlobal")
+            contracts[id].info[infoKey] = cache.contracts[id].info[infoKey];
+      }
   }
   return JSON.stringify({ contracts, height: cache.height });
+  /*
+  // The following implementation is faster by 30% but may be dangerous as
+  // swGlobal and handler as set to undefined while async functions use them
+  const exeEnvHolder = {};
+  for (const id in cache.contracts) {
+    const info = cache.contracts[id].info;
+    exeEnvHolder[id] = { swGlobal: info.swGlobal, handler: info.handler };
+    info.swGlobal = undefined;
+    info.handler = undefined;
+  }
+  const restore = JSON.stringify(cache);
+  for (const id in cache.contracts) {
+    const info = cache.contracts[id].info;
+    info.swGlobal = exeEnvHolder[id].swGlobal;
+    info.handler = exeEnvHolder[id].handler;
+  }
+  return restore;
+  */
 }
 
 /**
