@@ -5,6 +5,7 @@ const smartweave = require("smartweave");
 // 9BX6HQV5qkGiXV6hTglAuPdccKoEP_XI2NNbjHv5MMM main contract
 // 0Z4z_Z6tLza640a9aB6Y4wsUHO80i2JAgOa5rZZ7TsA new task contract
 // IpEKWpnCCa09-fALeXsQmVD_UYHCuyblVpgPOrsMXEM old task contract
+// LppT1p3wri4FCKzW5buohsjWxpJHC58_rgIO-rYTMB8 Extremely long recursive contract (17 hours for smartweave)
 const CONTRACT_ID = "b8y_FD82vSaE1skZtqPqtz9q6xiuZnqRcCm9mV90SuY";
 const NONREC_CONTRACT_ID = "qUUBzVLsdu0S_6nFu7jMmE1SU6elIW44quH6dXgY6BE";
 
