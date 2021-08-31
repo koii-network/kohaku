@@ -2,7 +2,7 @@
 
 SmartWeave Incremental Cache Wrapper
 
-Kohaku acts as a wrapper over SmartWeave but adds 3 rules to make cross-contract reading non-recursive.
+Kohaku acts as a wrapper over SmartWeave but adds 4 rules to make cross-contract reading non-recursive.
 
 1. Reads can only happen at the current height or greater
 2. Transactions are only processed for a contract after it is registered in Kohaku's cache
