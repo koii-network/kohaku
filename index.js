@@ -126,6 +126,13 @@ async function _readContract(arweave, contractId, height, returnValidity) {
   if (typeof height !== "number")
     height = (await arweave.network.getInfo()).height;
 
+  if (height <= newCache.height && contractId in cache.contracts) {
+    const state = JSON.parse(cache.contracts[contractId].state);
+    if (!returnValidity) return state;
+    const validity = JSON.parse(cache.contracts[contractId].validity);
+    return { state, validity };
+  }
+
   if (!Object.keys(cache.contracts).length)
     console.log("Initializing Kohaku cache with root", contractId);
 
@@ -163,10 +170,9 @@ async function _readContract(arweave, contractId, height, returnValidity) {
       "Kohaku read height is less than cache height, defaulting to cache height"
     );
   if (height <= newCache.height) {
-    const cacheContract = newCache.contracts[contractId];
-    const state = cacheContract.state;
+    const state = newCache.contracts[contractId].state;
     if (!returnValidity) return state;
-    const validity = cacheContract.validity;
+    const validity = newCache.contracts[contractId].validity;
     return { state, validity };
   }
 
