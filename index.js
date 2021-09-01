@@ -165,7 +165,7 @@ async function _readContract(arweave, contractId, height, returnValidity) {
       readFull: contract.readFull
     };
   }
-  const newCache = {
+  let newCache = {
     contracts: newContracts,
     height: cache.height
   };
@@ -209,7 +209,7 @@ async function _readContract(arweave, contractId, height, returnValidity) {
 
   // Sort and execute transactions to update the state
   await sortTransactions(arweave, txQueue);
-  await executeTransactions(txQueue);
+  while (txQueue.length) await executeTx(txQueue.shift());
 
   // Update state cache and return state, only update cache here so any errors won't mutate the cache
   for (const id in newCache.contracts) {
@@ -260,7 +260,7 @@ async function _readContract(arweave, contractId, height, returnValidity) {
           newCache.height
         );
         await sortTransactions(arweave, nonRecTxs);
-        await executeTransactions(nonRecTxs);
+        while (nonRecTxs.length) await executeTx(txQueue.shift());
       }
 
       // Fetch and sort transactions for this contract since cache height up to height
@@ -284,58 +284,47 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     return { state, validity };
   }
 
-  /**
-   * Execute transactions until empty and update the state
-   * @param {any[]} exeQueue
-   */
-  async function executeTransactions(exeQueue) {
-    // Execute every transaction in queue until empty
-    while (exeQueue.length) {
-      // Dequeue the transaction
-      const txInfo = exeQueue.shift();
-
-      // Find contract and input tag
-      let txContractId, input;
-      const tags = txInfo.node.tags;
-      for (let i = 0; i < tags.length - 1; ++i) {
-        if (
-          tags[i].name === "Contract" &&
-          tags[i].value in newCache.contracts &&
-          tags[i + 1].name === "Input"
-        ) {
-          txContractId = tags[i].value;
-          input = tags[i + 1].value;
-          break;
-        }
+  async function executeTx(txInfo) {
+    let txContractId, input;
+    const tags = txInfo.node.tags;
+    for (let i = 0; i < tags.length - 1; ++i) {
+      if (
+        tags[i].name === "Contract" &&
+        tags[i].value in newCache.contracts &&
+        tags[i + 1].name === "Input"
+      ) {
+        txContractId = tags[i].value;
+        input = tags[i + 1].value;
+        break;
       }
-      if (!txContractId) continue;
-
-      // Get transaction input
-      try {
-        input = JSON.parse(input);
-      } catch (e) {
-        continue;
-      }
-      if (!input) continue;
-
-      // Setup execution env
-      const { handler, swGlobal } = newCache.contracts[txContractId].info;
-      const currentTx = txInfo.node;
-      swGlobal._activeTx = currentTx;
-      swGlobal.contracts.readContractState = internalReadContract;
-      const interaction = { input, caller: currentTx.owner.address };
-      const validity = newCache.contracts[txContractId].validity;
-      newCache.height = currentTx.block.height;
-
-      // Execute and update contract
-      const result = await execute(
-        handler,
-        interaction,
-        newCache.contracts[txContractId].state
-      );
-      validity[currentTx.id] = result.type === "ok";
-      newCache.contracts[txContractId].state = result.state;
     }
+    if (!txContractId) return;
+
+    // Get transaction input
+    try {
+      input = JSON.parse(input);
+    } catch (e) {
+      return;
+    }
+    if (!input) return;
+
+    // Setup execution env
+    const { handler, swGlobal } = newCache.contracts[txContractId].info;
+    const currentTx = txInfo.node;
+    swGlobal._activeTx = currentTx;
+    swGlobal.contracts.readContractState = internalReadContract;
+    const interaction = { input, caller: currentTx.owner.address };
+    const validity = newCache.contracts[txContractId].validity;
+    newCache.height = currentTx.block.height;
+
+    // Execute and update contract
+    const result = await execute(
+      handler,
+      interaction,
+      newCache.contracts[txContractId].state
+    );
+    validity[currentTx.id] = result.type === "ok";
+    newCache.contracts[txContractId].state = result.state;
   }
 }
 
