@@ -337,6 +337,7 @@ async function _readContract(arweave, contractId, height, returnValidity) {
  * @returns {any[]} Transaction objects
  */
 async function fetchTransactions(arweave, contractIds, min, max) {
+  min = min || 1; // Using a min block height of 1 removes null blocks
   let variables = {
     tags: [
       { name: "App-Name", values: ["SmartWeaveAction"] },
