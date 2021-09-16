@@ -150,6 +150,7 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     const validity = JSON.parse(cache.contracts[contractId].validity);
     return { state, validity };
   }
+  if (height < cache.height) height = cache.height;
 
   if (!Object.keys(cache.contracts).length)
     console.log("Initializing Kohaku cache with root", contractId);
@@ -243,7 +244,6 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     if (!newCache.contracts[_contractId]) {
       // Load and cache it
       const contractInfo = await loadContract(arweave, _contractId);
-      contractInfo.swGlobal.contracts.readContractState = internalReadContract;
       newCache.contracts[_contractId] = {
         info: contractInfo,
         state: JSON.parse(contractInfo.initState),
