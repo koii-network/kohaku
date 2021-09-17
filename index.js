@@ -210,7 +210,11 @@ async function _readContract(arweave, contractId, height, returnValidity) {
 
   // Sort and execute transactions to update the state
   await sortTransactions(arweave, txQueue);
-  while (txQueue.length) await executeTx(txQueue.shift());
+  while (txQueue.length) {
+    const currentTx = txQueue.shift().node;
+    newCache.height = currentTx.block.height;
+    await executeTx(currentTx);
+  }
 
   // Update state cache and return state, only update cache here so any errors won't mutate the cache
   for (const id in newCache.contracts) {
@@ -260,7 +264,7 @@ async function _readContract(arweave, contractId, height, returnValidity) {
           newCache.height
         );
         await sortTransactions(arweave, nonRecTxs);
-        while (nonRecTxs.length) await executeTx(txQueue.shift());
+        while (nonRecTxs.length) await executeTx(nonRecTxs.shift().node);
       }
 
       // Fetch and sort transactions for this contract since cache height up to height
@@ -284,9 +288,9 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     return { state, validity };
   }
 
-  async function executeTx(txInfo) {
+  async function executeTx(currentTx) {
     let txContractId, input;
-    const tags = txInfo.node.tags;
+    const tags = currentTx.tags;
     for (let i = 0; i < tags.length - 1; ++i) {
       if (
         tags[i].name === "Contract" &&
@@ -310,12 +314,10 @@ async function _readContract(arweave, contractId, height, returnValidity) {
 
     // Setup execution env
     const { handler, swGlobal } = newCache.contracts[txContractId].info;
-    const currentTx = txInfo.node;
     swGlobal._activeTx = currentTx;
     swGlobal.contracts.readContractState = internalReadContract;
     const interaction = { input, caller: currentTx.owner.address };
     const validity = newCache.contracts[txContractId].validity;
-    newCache.height = currentTx.block.height;
 
     // Execute and update contract
     const result = await execute(
