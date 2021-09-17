@@ -212,7 +212,8 @@ async function _readContract(arweave, contractId, height, returnValidity) {
   await sortTransactions(arweave, txQueue);
   while (txQueue.length) {
     const currentTx = txQueue.shift().node;
-    newCache.height = currentTx.block.height;
+    if (currentTx.block.height > newCache.height)
+      newCache.height = currentTx.block.height;
     await executeTx(currentTx);
   }
 
