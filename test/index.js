@@ -64,7 +64,7 @@ async function main() {
   const exp = kohaku.exportCache();
   console.timeEnd("export");
 
-  console.log("Importing kohaku cache");
+  console.log("Importing Kohaku cache");
   console.time("import");
   await kohaku.importCache(arweave, exp);
   console.timeEnd("import");
@@ -74,6 +74,23 @@ async function main() {
   console.log(
     "Imported Kohaku read matches SmartWeave?",
     swState == JSON.stringify(res6)
+  );
+
+  console.log("\nExporting recursive Kohaku cache");
+  console.time("export");
+  const expRec = kohaku.exportRecursiveCache();
+  console.timeEnd("export");
+
+  console.log("Importing recursive Kohaku cache");
+  console.time("import");
+  await kohaku.importCache(arweave, expRec);
+  console.timeEnd("import");
+
+  console.log("Verifying import integrity");
+  const res7 = await kohaku.readContract(arweave, CONTRACT_ID);
+  console.log(
+    "Imported Kohaku read matches SmartWeave?",
+    swState == JSON.stringify(res7)
   );
 }
 
