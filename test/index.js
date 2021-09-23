@@ -92,6 +92,10 @@ async function main() {
     "Imported Kohaku read matches SmartWeave?",
     swState == JSON.stringify(res7)
   );
+
+  console.log("Checking validity map");
+  const res8 = await kohaku.readContract(arweave, CONTRACT_ID, -1, true);
+  console.log("Validity length:", Object.keys(res8.validity).length);
 }
 
 (async () => await main())();
