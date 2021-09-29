@@ -1,10 +1,10 @@
 {
   "name": "@_koi/kohaku",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "test": "node test"
+    "test": "node test --use_strict"
   },
   "dependencies": {
     "smartweave": "^0.4.41"

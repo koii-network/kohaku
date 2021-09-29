@@ -143,7 +143,6 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     console.warn(
       "Kohaku read height is less than cache height, defaulting to cache height"
     );
-
   if (height <= cache.height && contractId in cache.contracts) {
     const state = JSON.parse(cache.contracts[contractId].state);
     if (!returnValidity) return state;
@@ -151,65 +150,67 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     return { state, validity };
   }
   if (height < cache.height) height = cache.height;
-
   if (!Object.keys(cache.contracts).length)
     console.log("Initializing Kohaku cache with root", contractId);
 
+  // If not contract in local cache
+  let newContract;
+  if (!cache.contracts[contractId]) {
+    // Load and cache it
+    const info = await loadContract(arweave, contractId);
+    const state = JSON.parse(info.initState);
+
+    // Return current height for newly loaded recursive contracts
+    if (
+      info.contractSrc.includes("readContractState") &&
+      height === cache.height
+    ) {
+      if (!returnValidity) return state;
+      return { state, validity: {} };
+    }
+
+    newContract = {
+      info,
+      state,
+      validity: {}
+    };
+  }
+
+  // Fetch and sort transactions for all contracts since cache height up to height
+  const partialReads = Object.keys(cache.contracts);
+  let txQueue = [];
+  if (newContract) {
+    if (newContract.info.contractSrc.includes("readContractState"))
+      partialReads.push(contractId);
+    else
+      txQueue = await fetchTransactions(
+        arweave,
+        [contractId],
+        undefined,
+        height
+      );
+  }
+  txQueue = txQueue.concat(
+    await fetchTransactions(arweave, partialReads, cache.height + 1, height)
+  );
+  await sortTransactions(arweave, txQueue);
+
   // Clone cache to new cache (except for info, copy reference)
-  const newContracts = {};
+  const newContracts = newContract ? { [contractId]: newContract } : {};
   for (const key in cache.contracts) {
     const contract = cache.contracts[key];
     newContracts[key] = {
       info: contract.info,
       state: JSON.parse(contract.state),
-      validity: JSON.parse(contract.validity),
-      readFull: contract.readFull
+      validity: JSON.parse(contract.validity)
     };
   }
-  let newCache = {
+  const newCache = {
     contracts: newContracts,
     height: cache.height
   };
 
-  // If not contract in local cache
-  if (!newCache.contracts[contractId]) {
-    // Load and cache it
-    const contractInfo = await loadContract(arweave, contractId);
-    newCache.contracts[contractId] = {
-      info: contractInfo,
-      state: JSON.parse(contractInfo.initState),
-      validity: {},
-      readFull: !contractInfo.contractSrc.includes("readContractState")
-    };
-  }
-
-  // Return current height for newly loaded contract
-  if (height <= newCache.height) {
-    const state = newCache.contracts[contractId].state;
-    if (!returnValidity) return state;
-    const validity = newCache.contracts[contractId].validity;
-    return { state, validity };
-  }
-
-  // Fetch transactions for all contracts since cache height up to height
-  const readFullIds = { true: [], false: [] };
-  const entires = Object.entries(newCache.contracts);
-  for (const pair of entires) readFullIds[pair[1].readFull].push(pair[0]);
-  let txQueue = await fetchTransactions(
-    arweave,
-    readFullIds.false,
-    newCache.height + 1,
-    height
-  );
-  if (readFullIds.true.length) {
-    txQueue = txQueue.concat(
-      await fetchTransactions(arweave, readFullIds.true, undefined, height)
-    );
-    for (const id of readFullIds.true) newCache.contracts[id].readFull = false;
-  }
-
   // Sort and execute transactions to update the state
-  await sortTransactions(arweave, txQueue);
   while (txQueue.length) {
     const currentTx = txQueue.shift().node;
     if (currentTx.block.height > newCache.height)
@@ -248,33 +249,44 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     // If not contract in local cache
     if (!newCache.contracts[_contractId]) {
       // Load and cache it
-      const contractInfo = await loadContract(arweave, _contractId);
+      const info = await loadContract(arweave, _contractId);
       newCache.contracts[_contractId] = {
-        info: contractInfo,
-        state: JSON.parse(contractInfo.initState),
-        validity: {},
-        readFull: false
+        info,
+        state: JSON.parse(info.initState),
+        validity: {}
       };
 
-      // Immediately update the state to the current block height if non recursive
-      if (!contractInfo.contractSrc.includes("readContractState")) {
-        const nonRecTxs = await fetchTransactions(
+      let newTxs;
+      // Add txs from recursive contracts to txQueue
+      if (info.contractSrc.includes("readContractState")) {
+        newTxs = await fetchTransactions(
+          arweave,
+          [_contractId],
+          newCache.height + 1,
+          height
+        );
+      } else {
+        // For non recursive contracts, immediately execute txs below height
+        newTxs = await fetchTransactions(
           arweave,
           [_contractId],
           undefined,
-          newCache.height
+          height
         );
-        await sortTransactions(arweave, nonRecTxs);
-        while (nonRecTxs.length) await executeTx(nonRecTxs.shift().node);
+
+        if (newTxs.length) {
+          await sortTransactions(arweave, newTxs);
+          let i = 0;
+          while (newTxs[i].node.block.height <= newCache.height) ++i;
+          const nonRecTxs = newTxs.slice(0, i);
+          while (nonRecTxs.length) await executeTx(nonRecTxs.shift().node);
+
+          // Add remaining to txQueue
+          newTxs = newTxs.slice(i);
+        }
       }
 
-      // Fetch and sort transactions for this contract since cache height up to height
-      const newTxs = await fetchTransactions(
-        arweave,
-        [_contractId],
-        newCache.height + 1,
-        height
-      );
+      // Fetch and sort new transactions for this contract since cache height up to height
       if (newTxs.length) {
         txQueue = txQueue.concat(newTxs);
         await sortTransactions(arweave, txQueue);
