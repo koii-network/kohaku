@@ -9,6 +9,7 @@ const { arrayToHex } = require("smartweave/lib/utils");
 
 // Maximum number of transactions we can get from graphql at once
 const MAX_REQUEST = 100;
+const CHUNK_SIZE = 2000;
 
 // Cache singleton
 let cache = {
@@ -353,32 +354,35 @@ async function _readContract(arweave, contractId, height, returnValidity) {
  */
 async function fetchTransactions(arweave, contractIds, min, max) {
   min = min || 1; // Using a min block height of 1 removes null blocks
-  let variables = {
-    tags: [
-      { name: "App-Name", values: ["SmartWeaveAction"] },
-      { name: "Contract", values: contractIds }
-    ],
-    blockFilter: { min, max },
-    first: MAX_REQUEST
-  };
+  let txInfos = [];
 
-  let transactions = await getNextPage(arweave, variables);
-  const txInfos = transactions.edges.filter(
-    (tx) => !tx.node.parent || !tx.node.parent.id
-  );
-
-  while (transactions.pageInfo.hasNextPage) {
-    const cursor = transactions.edges[MAX_REQUEST - 1].cursor;
-    variables = {
-      ...variables,
-      after: cursor
+  for (let i = 0; i < contractIds.length; i += CHUNK_SIZE) {
+    const chunk = contractIds.slice(i, i + CHUNK_SIZE);
+    let variables = {
+      tags: [
+        { name: "App-Name", values: ["SmartWeaveAction"] },
+        { name: "Contract", values: chunk }
+      ],
+      blockFilter: { min, max },
+      first: MAX_REQUEST
     };
-    transactions = await getNextPage(arweave, variables);
-    txInfos.push(
-      ...transactions.edges.filter(
-        (tx) => !tx.node.parent || !tx.node.parent.id
-      )
+
+    let transactions = await getNextPage(arweave, variables);
+    txInfos = txInfos.concat(
+      transactions.edges.filter((tx) => !tx.node.parent || !tx.node.parent.id)
     );
+
+    while (transactions.pageInfo.hasNextPage) {
+      const cursor = transactions.edges[MAX_REQUEST - 1].cursor;
+      variables = {
+        ...variables,
+        after: cursor
+      };
+      transactions = await getNextPage(arweave, variables);
+      txInfos = txInfos.concat(
+        transactions.edges.filter((tx) => !tx.node.parent || !tx.node.parent.id)
+      );
+    }
   }
   return txInfos;
 }
