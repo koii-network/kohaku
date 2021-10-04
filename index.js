@@ -90,7 +90,7 @@ function exportRecursiveCache(exportContracts) {
 
 /**
  * Reads a contract from the cache as a string, will error if contract is not present in cache
- * @param {string} contractId Transaction Id of the contract
+ * @param {string} contractId Transaction ID of the contract to read
  * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
  * @returns {{string} | {string, string}} String or object that includes the state and validity array as strings
  */
@@ -99,6 +99,23 @@ function readContractCache(contractId, returnValidity) {
   if (!returnValidity) return state;
   const validity = cache.contracts[contractId].validity;
   return { state, validity };
+}
+
+/**
+ * Get Contract IDs in cache
+ * @returns {string[]} Contract IDs in present cache
+ */
+function getCacheContractIds() {
+  return Object.keys(cache.contracts);
+}
+
+/**
+ * Checks whether a contract is cached
+ * @param {string} contractId Transaction ID of the contract to check
+ * @returns {boolean} Whether a contract is present in the cache
+ */
+function isContractCached(contractId) {
+  return Object.prototype.hasOwnProperty.call(cache.contracts, contractId);
 }
 
 /**
@@ -458,9 +475,11 @@ async function addSortKey(arweave, txInfo) {
 
 // Create a proxy wrapper over the smartweave object for exporting
 const smartweaveProxy = {
-  readContractCache,
   readContract,
+  readContractCache,
   getCacheHeight,
+  getCacheContractIds,
+  isContractCached,
   importCache,
   exportCache,
   exportRecursiveCache
