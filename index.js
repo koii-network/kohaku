@@ -2,10 +2,9 @@ const { serialize, deserialize } = require("v8");
 const smartweave = require("smartweave");
 const { execute } = require("smartweave/lib/contract-step");
 const {
-  loadContract,
   createContractExecutionEnvironment
 } = require("smartweave/lib/contract-load");
-const { arrayToHex } = require("smartweave/lib/utils");
+const { arrayToHex, getTag } = require("smartweave/lib/utils");
 
 // Maximum number of transactions we can get from graphql at once
 const MAX_REQUEST = 100;
@@ -14,9 +13,23 @@ const CHUNK_SIZE = 2000;
 // Cache singleton
 let cache = {
   contracts: {},
+  contractSrcs: {},
   height: 0
 };
 let readLock = false;
+
+/**
+ * contractSrc object
+ * contractSrcTxId: {
+ *   contractSrc: string,
+ *   handler: Function,
+ *   isRecursive: boolean
+ * }
+ *
+ * TODO
+ * - delete initState string after loading
+ * - use one swGlobal instance for all transactions, simply update a few vars for each tx
+ */
 
 /**
  * Imports a cache externally. Used to improve startup times
@@ -359,6 +372,53 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     validity[currentTx.id] = result.type === "ok";
     newCache.contracts[txContractId].state = result.state;
   }
+}
+
+/**
+ * Loads the contract source, initial state and other parameters
+ * @param arweave     an Arweave client instance
+ * @param contractID  the Transaction Id of the contract
+ */
+async function loadContract(arweave, contractID, contractSrcTXID) {
+  // Generate an object containing the details about a contract in one place.
+  const contractTX = await arweave.transactions.get(contractID);
+  const contractOwner = await arweave.wallets.ownerToAddress(contractTX.owner);
+
+  contractSrcTXID = contractSrcTXID || getTag(contractTX, "Contract-Src");
+
+  const minFee = getTag(contractTX, "Min-Fee");
+  const contractSrcTX = await arweave.transactions.get(contractSrcTXID);
+  const contractSrc = contractSrcTX.get("data", { decode: true, string: true });
+
+  let state;
+  if (getTag(contractTX, "Init-State")) {
+    state = getTag(contractTX, "Init-State");
+  } else if (getTag(contractTX, "Init-State-TX")) {
+    const stateTX = await arweave.transactions.get(
+      getTag(contractTX, "Init-State-TX")
+    );
+    state = stateTX.get("data", { decode: true, string: true });
+  } else {
+    state = contractTX.get("data", { decode: true, string: true });
+  }
+
+  const { handler, swGlobal } = createContractExecutionEnvironment(
+    arweave,
+    contractSrc,
+    contractID,
+    contractOwner
+  );
+
+  return {
+    id: contractID,
+    contractSrcTXID,
+    contractSrc,
+    initState: state,
+    minFee,
+    contractTX,
+    handler,
+    swGlobal
+  };
 }
 
 /**
