@@ -4,7 +4,15 @@ const { execute } = require("smartweave/lib/contract-step");
 const {
   createContractExecutionEnvironment
 } = require("smartweave/lib/contract-load");
-const { arrayToHex, getTag } = require("smartweave/lib/utils");
+const {
+  arrayToHex,
+  getTag,
+  normalizeContractSource
+} = require("smartweave/lib/utils");
+const { SmartWeaveGlobal } = require("smartweave/lib/smartweave-global");
+
+const { BigNumber } = require("bignumber.js");
+const clarity = require("@weavery/clarity");
 
 // Maximum number of transactions we can get from graphql at once
 const MAX_REQUEST = 100;
@@ -17,6 +25,8 @@ let cache = {
   height: 0
 };
 let readLock = false;
+
+let swGlobal;
 
 /**
  * contractSrc object
@@ -357,9 +367,11 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     if (!input) return;
 
     // Setup execution env
-    const { handler, swGlobal } = newCache.contracts[txContractId].info;
+    const handler = newCache.contractSrcs[txContractId].handler;
+    swGlobal.contract.id = txContractId;
+    swGlobal.contract.owner = newCache.contracts.owner;
+    swGlobal.contracts.readContract = internalReadContract;
     swGlobal._activeTx = currentTx;
-    swGlobal.contracts.readContractState = internalReadContract;
     const interaction = { input, caller: currentTx.owner.address };
     const validity = newCache.contracts[txContractId].validity;
 
@@ -387,8 +399,6 @@ async function loadContract(arweave, contractID, contractSrcTXID) {
   contractSrcTXID = contractSrcTXID || getTag(contractTX, "Contract-Src");
 
   const minFee = getTag(contractTX, "Min-Fee");
-  const contractSrcTX = await arweave.transactions.get(contractSrcTXID);
-  const contractSrc = contractSrcTX.get("data", { decode: true, string: true });
 
   let state;
   if (getTag(contractTX, "Init-State")) {
@@ -402,22 +412,34 @@ async function loadContract(arweave, contractID, contractSrcTXID) {
     state = contractTX.get("data", { decode: true, string: true });
   }
 
-  const { handler, swGlobal } = createContractExecutionEnvironment(
-    arweave,
-    contractSrc,
-    contractID,
-    contractOwner
-  );
+  if (!Object.prototype.hasOwnProperty.call(cache.contractSrcs, contractID)) {
+    const contractSrcTX = await arweave.transactions.get(contractSrcTXID);
+    const contractSrc = contractSrcTX.get("data", {
+      decode: true,
+      string: true
+    });
+
+    const returningSrc = normalizeContractSource(contractSrc);
+    const getContractFunction = new Function(returningSrc);
+    cache.contractSrcs[contractID] = {
+      contractSrc,
+      handler: getContractFunction(swGlobal, BigNumber, clarity),
+      isRecursive: contractSrc.includes("readContractState")
+    };
+  }
+
+  if (!swGlobal) {
+    swGlobal = new SmartWeaveGlobal(arweave, {
+      id: contractID,
+      owner: contractOwner
+    });
+  }
 
   return {
     id: contractID,
-    contractSrcTXID,
-    contractSrc,
     initState: state,
     minFee,
-    contractTX,
-    handler,
-    swGlobal
+    contractTX
   };
 }
 
