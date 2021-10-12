@@ -1,9 +1,8 @@
 const { serialize, deserialize } = require("v8");
+const { BigNumber } = require("bignumber.js");
+const clarity = require("@weavery/clarity");
 const smartweave = require("smartweave");
 const { execute } = require("smartweave/lib/contract-step");
-const {
-  createContractExecutionEnvironment
-} = require("smartweave/lib/contract-load");
 const {
   arrayToHex,
   getTag,
@@ -11,12 +10,30 @@ const {
 } = require("smartweave/lib/utils");
 const { SmartWeaveGlobal } = require("smartweave/lib/smartweave-global");
 
-const { BigNumber } = require("bignumber.js");
-const clarity = require("@weavery/clarity");
-
 // Maximum number of transactions we can get from graphql at once
 const MAX_REQUEST = 100;
 const CHUNK_SIZE = 2000;
+
+/**
+ * contracts: {
+ *   contractTxId: {
+ *     info: {
+ *       contractSrcTxId: string,
+ *       owner: string
+ *     }
+ *     state: {}
+ *     validity: {}
+ *   }
+ * }
+ *
+ * contractSrcs: {
+ *   contractSrcTxId: {
+ *     contractSrc: string,
+ *     handler: Function,
+ *     isRecursive: boolean
+ *   }
+ * }
+ */
 
 // Cache singleton
 let cache = {
@@ -25,90 +42,60 @@ let cache = {
   height: 0
 };
 let readLock = false;
-
 let swGlobal;
 
 /**
- * contractSrc object
- * contractSrcTxId: {
- *   contractSrc: string,
- *   handler: Function,
- *   isRecursive: boolean
- * }
- *
- * TODO
- * - delete initState string after loading
- * - use one swGlobal instance for all transactions, simply update a few vars for each tx
- */
-
-/**
  * Imports a cache externally. Used to improve startup times
- * @param {*} arweave Arweave client instance
  * @param {string} importString JSON string to be deserialized
  */
-function importCache(arweave, importString) {
+function importCache(importString) {
   cache = JSON.parse(importString);
-  for (const contractId in cache.contracts) {
-    const contractInfo = cache.contracts[contractId].info;
-    const { handler, swGlobal } = createContractExecutionEnvironment(
-      arweave,
-      contractInfo.contractSrc,
-      contractId,
-      contractInfo.contractOwner
-    );
-    contractInfo.handler = handler;
-    contractInfo.swGlobal = swGlobal;
+  for (const contractSrcId in cache.contractSrcs) {
+    const srcData = cache.contractSrcs[contractSrcId];
+    const returningSrc = normalizeContractSource(srcData.contractSrc);
+    const getContractFunction = new Function(returningSrc);
+    srcData.handler = getContractFunction(swGlobal, BigNumber, clarity);
   }
 }
 
 /**
  * Exports the cache as a serialized JSON string, this can be slow so use sparingly
- * @param {string[]} exportContracts Array containing contracts to export. Will export all contracts if falsy
+ * @param {string[]?} exportContracts Array containing contracts to export. Will export all contracts if falsy
  * @returns {string} Cache serialized in JSON as a string
  */
 function exportCache(exportContracts) {
-  const contracts = {};
+  if (!exportContracts) return JSON.stringify(cache);
+
+  const contracts = {},
+    contractSrcs = {};
   for (const id in cache.contracts) {
-    if (exportContracts && !exportContracts.includes(id)) continue;
-    const contract = cache.contracts[id];
-    contracts[id] = {};
-    for (const key in contract)
-      if (key !== "info") contracts[id][key] = contract[key];
-      else {
-        contracts[id].info = {};
-        for (const infoKey in contract.info)
-          if (infoKey !== "handler" && infoKey !== "swGlobal")
-            contracts[id].info[infoKey] = contract.info[infoKey];
-      }
+    if (!exportContracts.includes(id)) continue;
+    contracts[id] = cache.contracts[id];
+    const src = cache.contracts[id].info.contractSrcTxId;
+    if (!(src in contractSrcs)) contractSrcs[src] = cache.contractSrcs[src];
   }
-  return JSON.stringify({ contracts, height: cache.height });
+  return JSON.stringify({ contracts, contractSrcs, height: cache.height });
 }
 
 /**
  * Exports recursive contracts in the cache as a serialized JSON string, this can be slow so use sparingly
- * @param {string[]} exportContracts Array containing recursive contracts to export. Will export all contracts if falsy
+ * @param {string[]?} exportContracts Array containing recursive contracts to export. Will export all contracts if falsy
  * @returns {string} Cache serialized in JSON as a string
  */
 function exportRecursiveCache(exportContracts) {
-  const contracts = {};
+  const contracts = {},
+    contractSrcs = {};
   for (const id in cache.contracts) {
-    const contract = cache.contracts[id];
+    const src = cache.contracts[id].info.contractSrcTxId;
     if (
       (exportContracts && !exportContracts.includes(id)) ||
-      !contract.info.contractSrc.includes("readContractState")
+      !cache.contractSrcs[src].isRecursive
     )
       continue;
-    contracts[id] = {};
-    for (const key in contract)
-      if (key !== "info") contracts[id][key] = contract[key];
-      else {
-        contracts[id].info = {};
-        for (const infoKey in contract.info)
-          if (infoKey !== "handler" && infoKey !== "swGlobal")
-            contracts[id].info[infoKey] = contract.info[infoKey];
-      }
+    contracts[id] = cache.contracts[id];
+    if (!(src in contractSrcs)) contractSrcs[src] = cache.contractSrcs[src];
   }
-  return JSON.stringify({ contracts, height: cache.height });
+  return JSON.stringify({ contracts, contractSrcs, height: cache.height });
 }
 
 /**
@@ -194,22 +181,16 @@ async function _readContract(arweave, contractId, height, returnValidity) {
   if (!Object.keys(cache.contracts).length)
     console.log("Initializing Kohaku cache with root", contractId);
 
-  // If not contract in local cache
+  // If not contract in local cache, load it
   let newContract;
   if (!cache.contracts[contractId]) {
-    // Load and cache it
-    const info = await loadContract(arweave, contractId);
-    const state = JSON.parse(info.initState);
-
+    const [info, state] = await loadContract(arweave, contractId);
     // Return current height for newly loaded recursive contracts
     if (
-      info.contractSrc.includes("readContractState") &&
+      cache.contractSrcs[info.contractSrcTxId].isRecursive &&
       height === cache.height
-    ) {
-      if (!returnValidity) return state;
-      return { state, validity: {} };
-    }
-
+    )
+      return returnValidity ? { state, validity: {} } : state;
     newContract = {
       info,
       state,
@@ -221,7 +202,7 @@ async function _readContract(arweave, contractId, height, returnValidity) {
   const partialReads = Object.keys(cache.contracts);
   let txQueue = [];
   if (newContract) {
-    if (newContract.info.contractSrc.includes("readContractState"))
+    if (cache.contractSrcs[newContract.info.contractSrcTxId].isRecursive)
       partialReads.push(contractId);
     else
       txQueue = await fetchTransactions(
@@ -236,20 +217,12 @@ async function _readContract(arweave, contractId, height, returnValidity) {
   );
   await sortTransactions(arweave, txQueue);
 
-  // Clone cache to new cache (except for info, copy reference)
-  const newContracts = newContract ? { [contractId]: newContract } : {};
-  for (const key in cache.contracts) {
-    const contract = cache.contracts[key];
-    newContracts[key] = {
-      info: contract.info,
-      state: JSON.parse(contract.state),
-      validity: JSON.parse(contract.validity)
-    };
-  }
+  // Clone cache to new cache
   const newCache = {
-    contracts: newContracts,
+    contracts: clone(cache.contracts),
     height: cache.height
   };
+  if (newContract) newCache.contracts[contractId] = newContract;
 
   // Sort and execute transactions to update the state
   while (txQueue.length) {
@@ -266,7 +239,8 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     contract.state = JSON.stringify(contract.state);
     contract.validity = JSON.stringify(contract.validity);
   }
-  cache = newCache;
+  cache.contracts = newCache.contracts;
+  cache.height = newCache.height;
 
   // Return result as an object
   const state = JSON.parse(cache.contracts[contractId].state);
@@ -290,16 +264,16 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     // If not contract in local cache
     if (!newCache.contracts[_contractId]) {
       // Load and cache it
-      const info = await loadContract(arweave, _contractId);
+      const [info, state] = await loadContract(arweave, _contractId);
       newCache.contracts[_contractId] = {
         info,
-        state: JSON.parse(info.initState),
+        state,
         validity: {}
       };
 
       let newTxs;
       // Add txs from recursive contracts to txQueue
-      if (info.contractSrc.includes("readContractState")) {
+      if (cache.contractSrcs[info.contractSrcTxId].isRecursive) {
         newTxs = await fetchTransactions(
           arweave,
           [_contractId],
@@ -336,9 +310,9 @@ async function _readContract(arweave, contractId, height, returnValidity) {
 
     // Clone output variables so newCache state isn't mutated
     const cacheContract = newCache.contracts[_contractId];
-    const state = deserialize(serialize(cacheContract.state));
+    const state = clone(cacheContract.state);
     if (!_returnValidity) return state;
-    const validity = deserialize(serialize(cacheContract.validity));
+    const validity = clone(cacheContract.validity);
     return { state, validity };
   }
 
@@ -367,13 +341,13 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     if (!input) return;
 
     // Setup execution env
-    const handler = newCache.contractSrcs[txContractId].handler;
+    const contract = newCache.contracts[txContractId];
+    const handler = cache.contractSrcs[contract.info.contractSrcTxId].handler;
     swGlobal.contract.id = txContractId;
-    swGlobal.contract.owner = newCache.contracts.owner;
-    swGlobal.contracts.readContract = internalReadContract;
+    swGlobal.contract.owner = contract.info.owner;
+    swGlobal.contracts.readContract = internalReadContract; // TODO remove this from hotpath, only needs to be set once
     swGlobal._activeTx = currentTx;
     const interaction = { input, caller: currentTx.owner.address };
-    const validity = newCache.contracts[txContractId].validity;
 
     // Execute and update contract
     const result = await execute(
@@ -381,8 +355,8 @@ async function _readContract(arweave, contractId, height, returnValidity) {
       interaction,
       newCache.contracts[txContractId].state
     );
-    validity[currentTx.id] = result.type === "ok";
-    newCache.contracts[txContractId].state = result.state;
+    contract.validity[currentTx.id] = result.type === "ok";
+    contract.state = result.state;
   }
 }
 
@@ -391,14 +365,12 @@ async function _readContract(arweave, contractId, height, returnValidity) {
  * @param arweave     an Arweave client instance
  * @param contractID  the Transaction Id of the contract
  */
-async function loadContract(arweave, contractID, contractSrcTXID) {
+async function loadContract(arweave, contractID, contractSrcTxId) {
   // Generate an object containing the details about a contract in one place.
   const contractTX = await arweave.transactions.get(contractID);
   const contractOwner = await arweave.wallets.ownerToAddress(contractTX.owner);
 
-  contractSrcTXID = contractSrcTXID || getTag(contractTX, "Contract-Src");
-
-  const minFee = getTag(contractTX, "Min-Fee");
+  contractSrcTxId = contractSrcTxId || getTag(contractTX, "Contract-Src");
 
   let state;
   if (getTag(contractTX, "Init-State")) {
@@ -412,8 +384,10 @@ async function loadContract(arweave, contractID, contractSrcTXID) {
     state = contractTX.get("data", { decode: true, string: true });
   }
 
-  if (!Object.prototype.hasOwnProperty.call(cache.contractSrcs, contractID)) {
-    const contractSrcTX = await arweave.transactions.get(contractSrcTXID);
+  if (
+    !Object.prototype.hasOwnProperty.call(cache.contractSrcs, contractSrcTxId)
+  ) {
+    const contractSrcTX = await arweave.transactions.get(contractSrcTxId);
     const contractSrc = contractSrcTX.get("data", {
       decode: true,
       string: true
@@ -421,26 +395,22 @@ async function loadContract(arweave, contractID, contractSrcTXID) {
 
     const returningSrc = normalizeContractSource(contractSrc);
     const getContractFunction = new Function(returningSrc);
-    cache.contractSrcs[contractID] = {
+    cache.contractSrcs[contractSrcTxId] = {
       contractSrc,
       handler: getContractFunction(swGlobal, BigNumber, clarity),
       isRecursive: contractSrc.includes("readContractState")
     };
   }
 
-  if (!swGlobal) {
-    swGlobal = new SmartWeaveGlobal(arweave, {
-      id: contractID,
-      owner: contractOwner
-    });
-  }
+  if (!swGlobal) swGlobal = new SmartWeaveGlobal(arweave, {});
 
-  return {
-    id: contractID,
-    initState: state,
-    minFee,
-    contractTX
-  };
+  return [
+    {
+      contractSrcTxId,
+      owner: contractOwner
+    },
+    JSON.parse(state)
+  ];
 }
 
 /**
@@ -537,6 +507,15 @@ async function getNextPage(arweave, variables) {
     throw nullBlockError;
   }
   return txs;
+}
+
+/**
+ * Deep clones an object
+ * @param {unknown} obj Object to be cloned
+ * @returns {unknown} Cloned object
+ */
+function clone(obj) {
+  return deserialize(serialize(obj));
 }
 
 // Exact copy of smartweave implementation

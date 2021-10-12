@@ -66,7 +66,7 @@ async function main() {
 
   console.log("Importing Kohaku cache");
   console.time("import");
-  await kohaku.importCache(arweave, exp);
+  await kohaku.importCache(exp);
   console.timeEnd("import");
 
   console.log("Verifying import integrity");
@@ -83,7 +83,7 @@ async function main() {
 
   console.log("Importing recursive Kohaku cache");
   console.time("import");
-  await kohaku.importCache(arweave, expRec);
+  await kohaku.importCache(expRec);
   console.timeEnd("import");
 
   console.log("Verifying import integrity");
