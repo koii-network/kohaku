@@ -16,7 +16,7 @@ const CHUNK_SIZE = 2000;
 
 /**
  * contracts: {
- *   contractTxId: {
+ *   [contractTxId]: {
  *     info: {
  *       contractSrcTxId: string,
  *       owner: string
@@ -27,7 +27,7 @@ const CHUNK_SIZE = 2000;
  * }
  *
  * contractSrcs: {
- *   contractSrcTxId: {
+ *   [contractSrcTxId]: {
  *     contractSrc: string,
  *     handler: Function,
  *     isRecursive: boolean
