@@ -15,32 +15,37 @@ const MAX_REQUEST = 100;
 const CHUNK_SIZE = 2000;
 
 /**
- * contracts: {
- *   [contractTxId]: {
- *     info: {
- *       contractSrcTxId: string,
- *       owner: string
- *     }
- *     state: {}
- *     validity: {}
- *   }
- * }
+ * Cache singleton
  *
- * contractSrcs: {
- *   [contractSrcTxId]: {
- *     contractSrc: string,
- *     handler: Function,
- *     isRecursive: boolean
- *   }
+ * cache: {
+ *   contracts: {
+ *     [contractTxId]: {
+ *       info: {
+ *         contractSrcTxId: string,
+ *         owner: string
+ *       }
+ *       state: unknown
+ *       validity: {
+ *         [transactionId]: boolean
+ *       }
+ *     }
+ *   },
+ *   contractSrcs: {
+ *     [contractSrcTxId]: {
+ *       contractSrc: string,
+ *       handler: Function,
+ *       isRecursive: boolean
+ *     }
+ *   },
+ *   height: number
  * }
  */
-
-// Cache singleton
 let cache = {
   contracts: {},
   contractSrcs: {},
   height: 0
 };
+
 let readLock = false;
 let swGlobal;
 
