@@ -53,7 +53,8 @@ let swGlobal;
  * Imports a cache externally. Used to improve startup times
  * @param {string} importString JSON string to be deserialized
  */
-function importCache(importString) {
+function importCache(arweave, importString) {
+  if (!swGlobal) swGlobal = new SmartWeaveGlobal(arweave, {});
   cache = JSON.parse(importString);
   for (const contractSrcId in cache.contractSrcs) {
     const srcData = cache.contractSrcs[contractSrcId];
@@ -398,6 +399,8 @@ async function loadContract(arweave, contractID, contractSrcTxId) {
     state = contractTX.get("data", { decode: true, string: true });
   }
 
+  if (!swGlobal) swGlobal = new SmartWeaveGlobal(arweave, {});
+
   if (
     !Object.prototype.hasOwnProperty.call(cache.contractSrcs, contractSrcTxId)
   ) {
@@ -415,9 +418,7 @@ async function loadContract(arweave, contractID, contractSrcTxId) {
       isRecursive: contractSrc.includes("readContractState")
     };
   }
-
-  if (!swGlobal) swGlobal = new SmartWeaveGlobal(arweave, {});
-
+  
   return [
     {
       contractSrcTxId,
