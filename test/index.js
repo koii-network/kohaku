@@ -96,6 +96,10 @@ async function main() {
   console.log("Checking validity map");
   const res8 = await kohaku.readContract(arweave, CONTRACT_ID, -1, true);
   console.log("Validity length:", Object.keys(res8.validity).length);
+
+  // console.log('kohaku', kohaku)
+  console.log('recursive', JSON.stringify(res1).length, JSON.stringify(res2).length, JSON.stringify(res3).length)
+  console.log('non-rec', JSON.stringify(res4).length, JSON.stringify(res5).length, JSON.stringify(res6).length, JSON.stringify(res7).length)
 }
 
 (async () => await main())();

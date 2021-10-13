@@ -93,6 +93,7 @@ function exportRecursiveCache(exportContracts) {
     )
       continue;
     contracts[id] = cache.contracts[id];
+    console.log("contract " + id + " +" + JSON.stringify(contracts[id]).length);
     if (!(src in contractSrcs)) contractSrcs[src] = cache.contractSrcs[src];
   }
   return JSON.stringify({ contracts, contractSrcs, height: cache.height });
@@ -136,6 +137,7 @@ function isContractCached(contractId) {
  * @param {boolean} returnValidity if true, the function will return valid and invalid transaction IDs along with the state
  */
 async function readContract(arweave, contractId, height, returnValidity) {
+  console.log("READ " + contractId, JSON.stringify(cache).length);
   if (readLock) return _readContract(arweave, contractId, -1, returnValidity);
   readLock = true;
   try {
@@ -255,6 +257,7 @@ async function _readContract(arweave, contractId, height, returnValidity) {
    * @param {string} contractId Transaction Id of the contract
    */
   async function internalReadContract(_contractId, _height, _returnValidity) {
+    console.log('height is ', _height)
     _height = _height || newCache.height;
     if (_height !== newCache.height)
       throw new Error(
