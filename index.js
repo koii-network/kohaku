@@ -360,7 +360,7 @@ async function _readContract(arweave, contractId, height, returnValidity) {
     const handler = cache.contractSrcs[contract.info.contractSrcTxId].handler;
     swGlobal.contract.id = txContractId;
     swGlobal.contract.owner = contract.info.owner;
-    swGlobal.contracts.readContract = internalReadContract; // TODO remove this from hotpath, only needs to be set once
+    swGlobal.contracts.readContractState = internalReadContract; // TODO remove this from hotpath, only needs to be set once
     swGlobal._activeTx = currentTx;
     const interaction = { input, caller: currentTx.owner.address };
 
