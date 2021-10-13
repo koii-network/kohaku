@@ -223,11 +223,19 @@ async function _readContract(arweave, contractId, height, returnValidity) {
   await sortTransactions(arweave, txQueue);
 
   // Clone cache to new cache
+  const newContracts = newContract ? { [contractId]: newContract } : {};
+  for (const key in cache.contracts) {
+    const contract = cache.contracts[key];
+    newContracts[key] = {
+      info: contract.info,
+      state: JSON.parse(contract.state),
+      validity: JSON.parse(contract.validity)
+    };
+  }
   const newCache = {
-    contracts: clone(cache.contracts),
+    contracts: newContracts,
     height: cache.height
   };
-  if (newContract) newCache.contracts[contractId] = newContract;
 
   // Sort and execute transactions to update the state
   while (txQueue.length) {
@@ -236,6 +244,10 @@ async function _readContract(arweave, contractId, height, returnValidity) {
       newCache.height = currentTx.block.height;
     await executeTx(currentTx);
   }
+
+  // Save reference to results
+  const state = newCache.contracts[contractId].state;
+  const validity = newCache.contracts[contractId].validity;
 
   // Update state cache and return state, only update cache here so any errors won't mutate the cache
   for (const id in newCache.contracts) {
@@ -247,11 +259,8 @@ async function _readContract(arweave, contractId, height, returnValidity) {
   cache.contracts = newCache.contracts;
   cache.height = newCache.height;
 
-  // Return result as an object
-  const state = JSON.parse(cache.contracts[contractId].state);
-  if (!returnValidity) return state;
-  const validity = JSON.parse(cache.contracts[contractId].validity);
-  return { state, validity };
+  // Return results
+  return returnValidity ? { state, validity } : state;
 
   // TODO FIXME Contract evolution is not supported
 
