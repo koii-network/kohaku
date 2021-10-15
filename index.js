@@ -307,7 +307,11 @@ async function _readContract(arweave, contractId, height, returnValidity) {
         if (newTxs.length) {
           await sortTransactions(arweave, newTxs);
           let i = 0;
-          while (newTxs[i].node.block.height <= newCache.height) ++i;
+          while (
+            i < newTxs.length &&
+            newTxs[i].node.block.height <= newCache.height
+          )
+            ++i;
           const nonRecTxs = newTxs.slice(0, i);
           while (nonRecTxs.length) await executeTx(nonRecTxs.shift().node);
 
