@@ -1118,10 +1118,10 @@ signal-exit@^3.0.2:
   resolved "https://registry.npmjs.org/signal-exit/-/signal-exit-3.0.5.tgz#9e3e8cc0c75a99472b44321033a7702e7738252f"
   integrity sha512-KWcOiKeQj6ZyXx7zq4YxSMgHRlod4czeBQZrPb8OKcohcqAXShm7E20kEMle9WBt26hFcAf0qLOcp5zmY7kOqQ==
 
-smartweave@^0.4.45:
-  version "0.4.45"
-  resolved "https://registry.npmjs.org/smartweave/-/smartweave-0.4.45.tgz#fbcd83a6efa1b408e4eb5cbe9a07218549856153"
-  integrity sha512-CTrJpQhcK92Xppxb3uEl2EIzGMyDAXcG0CUHQ62H4om6Ez3JpB0C0v0MO/M0O6s+0s5cxAEyM1NPURPsTPO0BQ==
+smartweave@^0.4.46:
+  version "0.4.46"
+  resolved "https://registry.npmjs.org/smartweave/-/smartweave-0.4.46.tgz#55e2eb0e006e6ca84e5eb99f1bea7f19ac8a98db"
+  integrity sha512-wZMCBRz5n+uElzdpEbQOvHs32q1rnAPVMlR57gtoKSSAtMolUVjjlcl6WK2RBU5doi9PQdUEHB/c7nLRwgfSew==
   dependencies:
     "@types/clui" "^0.3.0"
     "@types/inquirer" "^7.3.1"
